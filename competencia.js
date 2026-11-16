@@ -54,7 +54,21 @@
     if (n === 'a distancia' || n === 'virtual') return 'dist';
     return null;
   }
-  // Privada societaria: razón social con forma de sociedad (S.A.C., S.A., S.A.A., S.R.L., E.I.R.L.); si no, asociativa
+  // Condición jurídica de las privadas. Fuente: Sunedu, «Universidades privadas» (sunedu.gob.pe/universidades-privadas),
+  // columna CONDICIÓN JURÍDICA. Se listan las asociativas; las demás privadas de esa lista son societarias.
+  const SUNEDU_ASO = ['Pontificia Universidad Católica del Perú', 'Universidad Peruana Cayetano Heredia', 'Universidad Católica de Santa María',
+    'Universidad del Pacífico', 'Universidad de Lima', 'Universidad de San Martín de Porres', 'Universidad Femenina del Sagrado Corazón',
+    'Universidad Inca Garcilaso de la Vega', 'Universidad de Piura', 'Universidad Ricardo Palma', 'Universidad Andina Néstor Cáceres Velásquez',
+    'Universidad Peruana Los Andes', 'Universidad Peruana Unión', 'Universidad Andina del Cusco', 'Universidad Tecnológica de los Andes',
+    'Universidad Privada de Tacna', 'Universidad Particular de Chiclayo', 'Universidad San Pedro', 'Universidad Privada Antenor Orrego',
+    'Universidad de Huánuco', 'Universidad José Carlos Mariátegui', 'Universidad Marcelino Champagnat', 'Universidad Científica del Perú',
+    'Universidad Católica Los Ángeles de Chimbote', 'Universidad Católica San Pablo', 'Universidad Católica Santo Toribio de Mogrovejo',
+    'Universidad Católica Sedes Sapientiae', 'Universidad Católica de Trujillo Benedicto XVI', 'Universidad ESAN',
+    'Universidad Antonio Ruiz de Montoya', 'Universidad para el Desarrollo Andino', 'Universidad Privada de Trujillo',
+    'Universidad de Ciencias y Humanidades', 'Universidad Jaime Bausate y Meza', 'Universidad Peruana del Centro',
+    'Universidad de Ingeniería y Tecnología', 'Universidad La Salle', 'Universidad Seminario Evangélico de Lima',
+    'Universidad Seminario Bíblico Andino', 'Universidad Católica San José'].map(n => nrm(n));
+  // Respaldo si un nombre no está en la lista: razón social con forma de sociedad (S.A.C., S.A., S.R.L., E.I.R.L.) = societaria
   const esSocietaria = nom => /(s\.?\s?a\.?\s?c\.?|s\.\s?a\.?(\s?a\.?)?|s\.\s?r\.\s?l\.?|e\.\s?i\.\s?r\.\s?l\.?)\s*$/i.test(String(nom || '').trim());
   const famOk = r3 => r3 != null && r3 !== '' && nrm(r3) !== 'no se encuentra';
 
@@ -223,7 +237,7 @@
     const res = [];
     for (const [cod] of porU) {
       if (!priv.has(cod)) continue;
-      const aso = !esSocietaria(priv.get(cod));
+      const aso = SUNEDU_ASO.some(n => nrm(priv.get(cod)).includes(n)) || !esSocietaria(priv.get(cod));
       if (aso && st.aso === 'no') continue;
       const filas = evalua(cod), tr = filas.filter(f => f.tras);
       const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0];
