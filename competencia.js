@@ -12,7 +12,9 @@
 
   const UCAL = {cod: '260000108', patron: /ciencias y artes de america latina/, s: 'UCAL'};
   const DEF = {t1: 1500, t2: 2500, d1: 200, d2: 100, dAlto: 250, q14: 20,
-    z1: 1, z2: 3, z3: 4, z4: 5, wPre: 1, wMae: 0.75, wDoc: 0.75, wPres: 1, wSemi: 1, wVirt: 0.5};
+    z1: 1, z2: 3, z3: 4, z4: 5, wPre: 1, wMae: 0.75, wDoc: 0.75, wPres: 1, wSemi: 1, wVirt: 0.5,
+    nConf: 3, minMk: 0};
+  const N_PROM = 6;   // «Promedio de los últimos seis ciclos»
   const CATS = ['Nulo', 'Muy bajo', 'Bajo', 'Moderado', 'Alto', 'Muy alto'];
   const ZONAS = [
     {c: 'Z0', n: 'Sin traslape'},
@@ -25,8 +27,8 @@
   const LIMA_LC = 'Lima Metropolitana y Callao';
 
   let RAW = null, RES = null;
-  const st = {per: null, lima: 'lc', univ: 'all', mod: 'sep', alcance: 'todo', se: 'excl',
-    sortR: {k: 'ind', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
+  const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo',
+    sortR: {k: 'cat', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
     fZona: 'tras', fNivel: '', fMod: '', fGeo: '', abierto: null};
 
   const $ = id => document.getElementById(id);
@@ -42,7 +44,7 @@
     if (n === 'carrera profesional') return 'Pregrado';
     if (n.startsWith('maestr')) return 'Maestría';
     if (n.startsWith('doctor')) return 'Doctorado';
-    if (n.startsWith('segunda especialidad')) return 'SE';
+    if (n.startsWith('segunda especialidad')) return 'Pregrado';
     return null;
   }
   function modLaureate(v) {
@@ -82,15 +84,16 @@
     cl.mod = L.h.findIndex((x, j) => j > iM1 && x === 'modalidad');
     if (cl.mod < 0) cl.mod = iM1;
     const lau = [];
-    let lExcl = 0, lSinFam = 0;
+    const lSinFam = new Map();   // por ciclo: alumnos de pregrado/posgrado sin Familia Sunedu (no entran)
     for (const r of L.d) {
       if (!r[cl.emp]) continue;
       const n = num(r[cl.n]) || 0, ta = nrm(r[cl.tipoAj]);
+      // Diplomados y cursos cortos no entran: solo pregrado y posgrado (maestrías)
       const niv = ta === 'pregrado' ? 'Pregrado' : ta === 'posgrado' ? (/doctor/i.test(r[cl.tipo] || '') ? 'Doctorado' : 'Maestría') : null;
-      if (!niv) { lExcl += n; continue; }
-      if (!famOk(r[cl.r3])) { lSinFam += n; continue; }
+      if (!niv) continue;
+      if (!famOk(r[cl.r3])) { const k = String(r[cl.ciclo]); lSinFam.set(k, (lSinFam.get(k) || 0) + n); continue; }
       const m = modLaureate(r[cl.mod]);
-      if (!m) { lExcl += n; continue; }
+      if (!m) continue;
       const sa = String(r[cl.sedeAj] || '').trim();
       const lima = nrm(sa).startsWith('lima');
       lau.push({emp: String(r[cl.emp]).trim(), per: String(r[cl.ciclo]), niv, r3: r[cl.r3], m, n,
@@ -114,7 +117,7 @@
     const provT = new Map(); for (const r of tuni) { provT.set(nrm(r.pA), r.pA); provT.set(nrm(r.pL), r.pL); }
     for (const x of lau) x.prov = provT.get(nrm(x.prov)) || x.prov;
     const callao = [...provT.values()].find(p => /callao/i.test(p)) || 'Prov. Const. del Callao';
-    return {tuni, lau, compra, ucalTuni, emps: emps.map(empS), sig, periodos, callao, tSinFam, lExcl, lSinFam};
+    return {tuni, lau, compra, ucalTuni, emps: emps.map(empS), sig, nomA, periodos, callao, tSinFam, lSinFam};
   }
 
   // ------------------------------------------------------------------ cálculo
@@ -130,10 +133,26 @@
     return d < p.dAlto ? 3 : 4;
   }
   const categoria = s => s == null ? null : Math.min(5, Math.max(0, Math.ceil(s - 1e-9)));
+  // Categoría de la operación por CANTIDAD de mercados (no por promedio):
+  // para cada nivel L, si al menos N mercados están en L o más, la operación es L;
+  // si hay entre 1 y N-1, la operación es L-1. Se toma el máximo. Con traslape, mínimo «Muy bajo».
+  function catOperacion(cc, nConf) {
+    const n = cc.reduce((s, v) => s + v, 0);
+    if (!n) return null;
+    let cat = 1;
+    for (let L = 5; L >= 2; L--) {
+      const ge = cc.slice(L).reduce((s, v) => s + v, 0);
+      if (ge >= nConf) { cat = Math.max(cat, L); break; }
+      if (ge >= 1) cat = Math.max(cat, L - 1);
+    }
+    return cat;
+  }
+  const periodosSel = () => st.per === 'prom' ? RAW.periodos.slice(-N_PROM) : [st.per];
 
   function calcular() {
     const R = RAW, p = P();
-    const niveles = new Set(st.alcance === 'pos' ? ['Maestría', 'Doctorado'] : NIVELES);
+    const niveles = new Set(st.alcance === 'pre' ? ['Pregrado'] : NIVELES);
+    const PS = new Set(periodosSel()), fac = 1 / PS.size;   // promedio: cada ciclo pesa 1/6
     const MODS = st.mod === 'sep'
       ? [['Presencial', 'pres', p.wPres], ['Semipresencial', 'semi', p.wSemi], ['Virtual', 'dist', p.wVirt]]
       : [['Presencial + semi', 'p2', p.wPres], ['Virtual', 'dist', p.wVirt]];
@@ -148,22 +167,22 @@
     const geoT = (r, virt) => virt ? 'Nacional' : (st.lima === 'lc' ? r.pA : r.pL);
     // Base_Tuni: resto del mercado (y UCAL mientras no esté en la hoja Laureate)
     for (const r of R.tuni) {
-      if (r.per !== st.per) continue;
-      const niv = r.niv === 'SE' ? (st.se === 'pre' ? 'Pregrado' : null) : r.niv;
-      if (!niv || !niveles.has(niv)) continue;
+      if (!PS.has(r.per)) continue;
+      const niv = r.niv;
+      if (!niveles.has(niv)) continue;
       const enA = R.compra.has(r.cod);
       if (enA && !(r.cod === UCAL.cod && R.ucalTuni)) continue;   // UPC y UPN salen de la hoja Laureate
       if (!enA && !esUniversidad(r.cod, r.nom)) continue;
       if (!enA && st.univ === 'priv' && !r.priv) continue;
       const firm = enA ? 'A' : r.cod;
-      MODS.forEach(([, campo], mi) => { const v = r[campo]; if (v > 0) add(niv, r.r3, mi, geoT(r, campo === 'dist'), firm, v); });
+      MODS.forEach(([, campo], mi) => { const v = r[campo]; if (v > 0) add(niv, r.r3, mi, geoT(r, campo === 'dist'), firm, v * fac); });
     }
     // Hoja Laureate: comprador
     for (const x of R.lau) {
-      if (x.per !== st.per || !niveles.has(x.niv)) continue;
+      if (!PS.has(x.per) || !niveles.has(x.niv)) continue;
       const mi = x.m === 'dist' ? MODS.length - 1 : (st.mod === 'sep' ? (x.m === 'semi' ? 1 : 0) : 0);
       const geo = x.m === 'dist' ? 'Nacional' : (st.lima === 'sl' && x.callao ? R.callao : x.prov);
-      add(x.niv, x.r3, mi, geo, 'A', x.n);
+      add(x.niv, x.r3, mi, geo, 'A', x.n * fac);
     }
     // indicadores por mercado
     const mercados = [...mk.values()];
@@ -182,7 +201,7 @@
       const filas = [];
       for (const m of porU.get(cod) || []) {
         const B = m.f.get(cod), sB = 100 * B / m.tot;
-        const tras = m.A > 0 && B > 0;
+        const tras = m.A > 0 && B > 0 && m.tot >= p.minMk;   // mercados por debajo del tamaño mínimo no cuentan
         const d = tras ? 2 * m.sA * sB : 0, post = m.hhi + d;
         const z = tras ? zona(post, d, p) : 0, sc = zs[z], pond = sc * m.w;
         filas.push({m, B, sB, tras, d, post, z, sc, pond, cat: categoria(pond), catZ: categoria(sc), sJ: m.sA + sB, q14: tras && m.sA + sB >= p.q14});
@@ -201,8 +220,11 @@
         cc[f.cat]++; suma += f.pond; max = Math.max(max ?? 0, f.pond); alT += f.B; if (f.z >= 2) alZ2 += f.B;
       }
       const ind = tr.length ? suma / tr.length : null;
+      const cat = catOperacion(cc, p.nConf);
+      const ge4 = cc[4] + cc[5];
       res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: (BD.unis.get(cod) || {}).seg || 'Resto de privadas',
-        al, nMk: filas.length, nTr: tr.length, zc, cc, ind, cat: categoria(ind), max, q14: filas.filter(f => f.q14).length, alT, alZ2});
+        al, nMk: filas.length, nTr: tr.length, zc, cc, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
+        rk: cat == null ? -1 : cat * 1e6 + (cat >= 1 ? cc.slice(cat).reduce((s, v) => s + v, 0) : 0) * 1e3 + (ind || 0)});
     }
     const mA = mercados.filter(m => m.A > 0);
     RES = {p, mercados, res, evalua, alA: mA.reduce((s, m) => s + m.A, 0), nMA: mA.length};
@@ -224,25 +246,29 @@
         <div class="field"><span>Lima</span>${segBtns('cp-lima', [['lc', 'Lima + Callao'], ['sl', 'Solo Lima']], st.lima)}</div>
         <div class="field"><span>Universidades en el mercado</span>${segBtns('cp-univ', [['all', 'Privadas y públicas'], ['priv', 'Solo privadas']], st.univ)}</div>
         <div class="field"><span>Presencial y semipresencial</span>${segBtns('cp-mod', [['sep', 'Separados'], ['jun', 'Un solo mercado']], st.mod)}</div>
-        <div class="field"><span>Evaluación de riesgo</span>${segBtns('cp-alc', [['todo', 'Pregrado y posgrado'], ['pos', 'Solo posgrado']], st.alcance)}</div>
-        <div class="field"><span>Segunda especialidad</span>${segBtns('cp-se', [['excl', 'Excluir'], ['pre', 'Como pregrado']], st.se)}</div>
+        <div class="field"><span>Evaluación de riesgo</span>${segBtns('cp-alc', [['todo', 'Pregrado y posgrado'], ['pre', 'Solo pregrado']], st.alcance)}</div>
       </div>
-      <details>
-        <summary>Umbrales IHH, puntajes y ponderadores</summary>
-        <div class="umbrales">
-          ${inp('t1', 'IHH post umbral inferior', 100)}${inp('t2', 'IHH post umbral superior', 100)}
+    </section>
+    <section class="card">
+      <h2>Parámetros de riesgo <small>editables; «Restablecer» vuelve a los valores de referencia</small>
+        <button class="btn ghost sm" id="cp-reset" style="margin-left:auto">Restablecer</button></h2>
+      <div class="cp-pr">
+        <div class="cp-grp"><h3>Umbrales IHH <small>Indecopi (2023)</small></h3>
+          ${inp('t1', 'IHH post, umbral inferior', 100)}${inp('t2', 'IHH post, umbral superior', 100)}
           ${inp('d1', 'Δ máx. zona 1,500–2,500', 10)}${inp('d2', 'Δ máx. zona > 2,500', 10)}
-          ${inp('dAlto', 'Δ «alto» (Z3 vs Z4)', 10)}${inp('q14', 'Pregunta 14: participación conjunta ≥ (%)', 1)}
-        </div>
-        <div class="umbrales">
-          ${inp('z1', 'Puntaje Z1', 1)}${inp('z2', 'Z2', 1)}${inp('z3', 'Z3', 1)}${inp('z4', 'Z4', 1)}
-        </div>
-        <div class="umbrales">
-          ${inp('wPre', 'Peso pregrado', 0.05)}${inp('wMae', 'maestría', 0.05)}${inp('wDoc', 'doctorado', 0.05)}
-          ${inp('wPres', 'presencial', 0.05)}${inp('wSemi', 'semipresencial', 0.05)}${inp('wVirt', 'virtual', 0.05)}
-          <button class="btn ghost sm" id="cp-reset">Restablecer</button>
-        </div>
-      </details>
+          ${inp('dAlto', 'Δ «alto» (separa Z3 de Z4)', 10)}${inp('q14', 'Pregunta 14: s A+B ≥ (%)', 1)}</div>
+        <div class="cp-grp"><h3>Puntaje por zona <small>0–5</small></h3>
+          <label>${chipZ(0)} Sin traslape <input type="number" value="0" disabled></label>
+          ${[1, 2, 3, 4].map(z => inp('z' + z, `${chipZ(z)} ${ZONAS[z].n}`, 1)).join('')}</div>
+        <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad</small></h3>
+          ${inp('wPre', 'Pregrado', 0.05)}${inp('wMae', 'Maestría', 0.05)}${inp('wDoc', 'Doctorado', 0.05)}
+          ${inp('wPres', 'Presencial', 0.05)}${inp('wSemi', 'Semipresencial', 0.05)}${inp('wVirt', 'Virtual (nacional)', 0.05)}</div>
+        <div class="cp-grp"><h3>Categoría de la operación <small>por cantidad de mercados</small></h3>
+          ${inp('nConf', 'Mercados para confirmar una categoría', 1)}
+          ${inp('minMk', 'Tamaño mínimo del mercado (alumnos)', 50)}
+          <p class="cp-regla">Mercado: puntaje ponderado = zona × peso nivel × peso modalidad → ${CATS.map((c, i) => `${chipC(i)}`).join(' ')} (≤ 0, 1, 2, 3, 4, 5).<br>
+          Operación: si al menos <b id="cp-n1">${DEF.nConf}</b> mercados están en una categoría o más, la operación toma esa categoría; si hay de 1 a <b id="cp-n2">${DEF.nConf - 1}</b>, toma la inmediata inferior. Se queda con la más alta. Los mercados con menos alumnos que el mínimo no cuentan como traslape.</p></div>
+      </div>
     </section>
     <section class="kpis" id="cp-kpis"></section>
     <section class="card">
@@ -271,11 +297,12 @@
         <ul>
           <li><b>Comprador (A):</b> Laureate (UPC + UPN) más UCAL, tratados como una sola empresa. Laureate sale de la hoja «Laureate» (Tipo (ajustado), segunda columna Modalidad, Sede (ajustado), Familia Sunedu, Ciclo y # Alumnos); se excluyen diplomados y cursos cortos. UCAL se toma de Base_Tuni mientras no aparezca en la hoja Laureate; cuando aparezca, se usará la hoja. UPC y UPN de Base_Tuni no se usan, para no contarlas dos veces.</li>
           <li><b>Resto del mercado:</b> Base_Tuni, solo universidades (tipo de entidad «Universidad» en Base_Universidades). Alumnos por modalidad: con modalidades separadas, columnas Presencial y Semipresencial de «Modalidades separadas >>>» (AO y AN) y A distancia (AR); con un solo mercado presencial, «Presencial (+semi)» (AQ) y A distancia (AR).</li>
-          <li><b>Mercado relevante:</b> nivel (pregrado = carrera profesional; maestría; doctorado) × Familia Sunedu × modalidad × ámbito. Presencial y semipresencial por provincia: PROVINCIA_AJUSTADA (Lima + Callao, columna T) o PROVINCIA_LOCAL (solo Lima, columna S). Virtual: un mercado nacional.</li>
+          <li><b>Mercado relevante:</b> nivel (pregrado = carrera profesional y segunda especialidad; maestría; doctorado) × Familia Sunedu × modalidad × ámbito. Presencial y semipresencial por provincia: PROVINCIA_AJUSTADA (Lima + Callao, columna T) o PROVINCIA_LOCAL (solo Lima, columna S). Virtual: un mercado nacional.</li>
           <li><b>IHH:</b> suma de participaciones al cuadrado (en %), con el comprador como una sola empresa. ΔIHH = 2 × s<sub>A</sub> × s<sub>B</sub>; IHH post = IHH pre + ΔIHH.</li>
           <li><b>Zonas:</b> Z0 sin traslape (A o B sin alumnos en el mercado). Z1: IHH post &lt; 1,500; o 1,500–2,500 con Δ &lt; 200; o &gt; 2,500 con Δ &lt; 100. Z2: 1,500–2,500 con Δ ≥ 200. Z3: &gt; 2,500 con 100 ≤ Δ &lt; Δ alto. Z4: &gt; 2,500 con Δ ≥ Δ alto (250, supuesto de calibración, no es umbral Indecopi). Umbrales: Lineamientos de Indecopi (2023).</li>
           <li><b>Puntaje ponderado</b> del mercado = puntaje de la zona × peso del nivel × peso de la modalidad. <b>Categoría</b>: la primera cuyo límite superior (0, 1, 2, 3, 4, 5) es ≥ al puntaje.</li>
-          <li><b>Indicador de la operación</b> = promedio de los puntajes ponderados de los mercados con traslape, clasificado con las mismas categorías. Las columnas Z1–Z4 y la barra muestran cuántos mercados caen en cada zona y categoría; no se agregan en un número.</li>
+          <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: si al menos N mercados (3 por defecto) están en una categoría ponderada o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y tres lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
+          <li><b>Periodo:</b> un ciclo, o el promedio de alumnos de los últimos seis ciclos comunes a Base_Tuni y la hoja Laureate.</li>
           <li><b>Pregunta 14:</b> mercados con participación conjunta ≥ 20%. Solo indica reporte en el formulario; no cambia el riesgo.</li>
           <li>Esta pestaña es un análisis aparte: no cambia el simulador ni sus resultados.</li>
         </ul>
@@ -286,7 +313,7 @@
       $(id).querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
       st[key] = b.dataset.v; recalcular();
     });
-    seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-alc', 'alcance'); seg('cp-se', 'se');
+    seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-alc', 'alcance');
     $('cp-per').onchange = () => { st.per = $('cp-per').value; recalcular(); };
     Object.keys(DEF).forEach(k => $('cp-' + k).onchange = recalcular);
     $('cp-reset').onclick = () => { Object.keys(DEF).forEach(k => $('cp-' + k).value = DEF[k]); recalcular(); };
@@ -303,16 +330,19 @@
     const mods = [...new Set(RES.mercados.map(m => m.mod))];
     if (!mods.includes(st.fMod)) st.fMod = '';
     $('cp-fm').innerHTML = '<option value="">Todas</option>' + mods.map(m => `<option${m === st.fMod ? ' selected' : ''}>${m}</option>`).join('');
-    if (st.alcance === 'pos' && st.fNivel === 'Pregrado') { st.fNivel = ''; $('cp-fn').value = ''; }
+    if (st.alcance === 'pre' && st.fNivel && st.fNivel !== 'Pregrado') { st.fNivel = ''; $('cp-fn').value = ''; }
+    const n = RES.p.nConf; $('cp-n1').textContent = n; $('cp-n2').textContent = Math.max(1, n - 1);
     pintarFuente(); pintarKpis(); pintarRes(); pintarDet();
   }
 
   function pintarFuente() {
-    const R = RAW, av = [];
+    const R = RAW, av = [], ps = periodosSel();
     const comp = [...R.emps, ...(R.ucalTuni ? ['UCAL'] : [])].join(' + ');
-    if (R.lSinFam) av.push(`<span class="warn" title="Filas de la hoja Laureate sin Familia Sunedu (todos los periodos); no entran al cálculo">${fmt(R.lSinFam)} alumnos de Laureate sin Familia Sunedu (todos los periodos)</span>`);
-    $('cp-fuente').innerHTML = `<span>Comprador: <b>${esc(comp)}</b> · Laureate desde la hoja «Laureate»${R.ucalTuni ? ', UCAL desde Base_Tuni' : ''}</span>
-      <span>${fmt(RES.alA)} alumnos del comprador en ${fmt(RES.nMA)} mercados · ${esc(st.per)}</span>${av.join('')}`;
+    const sinFam = ps.reduce((s, p) => s + (R.lSinFam.get(p) || 0), 0) / ps.length;
+    if (sinFam >= 1) av.push(`<span class="warn" title="Filas de pregrado o posgrado de la hoja Laureate sin Familia Sunedu (p. ej. «_Masters Incl Other»); no entran al cálculo. Diplomados y cursos cortos se excluyen siempre.">${fmt(sinFam)} alumnos de Laureate sin Familia Sunedu</span>`);
+    const perTxt = st.per === 'prom' ? `promedio ${ps[0]} a ${ps[ps.length - 1]}` : st.per;
+    $('cp-fuente').innerHTML = `<span>Comprador: <b>${esc(comp)}</b> · Laureate desde la hoja «Laureate» (sin diplomados ni cursos cortos)${R.ucalTuni ? ', UCAL desde Base_Tuni' : ''}</span>
+      <span>${fmt(RES.alA)} alumnos del comprador en ${fmt(RES.nMA)} mercados · ${esc(perTxt)}</span>${av.join('')}`;
   }
 
   function pintarKpis() {
@@ -337,11 +367,12 @@
     {k: 'dist', n: 'Mercados por categoría (ponderado)', l: true, ns: true},
     {k: 'pT', n: '% alumnos en traslape', t: 'Alumnos de la universidad en mercados con traslape / sus alumnos en el alcance'},
     {k: 'q14', n: 'Preg. 14', t: 'Mercados con participación conjunta ≥ umbral'},
-    {k: 'max', n: 'Máx. pond.'},
-    {k: 'ind', n: 'Indicador', t: 'Promedio de los puntajes ponderados de los mercados con traslape'},
-    {k: 'cat', n: 'Categoría', ns: true},
+    {k: 'ge4', n: 'Alto o más', t: 'Mercados con categoría ponderada Alto o Muy alto'},
+    {k: 'ind', n: 'Promedio pond.', t: 'Promedio de los puntajes ponderados de los mercados con traslape (referencial)'},
+    {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada categoría (ver Parámetros de riesgo)'},
   ];
-  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k === 'pT' ? (x.al ? x.alT / x.al : 0) : k === 'cat' ? x.cat : x[k];
+  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k === 'pT' ? (x.al ? x.alT / x.al : 0) : k === 'cat' ? x.rk : x[k];
+  const nomLargo = x => nrm(x.nom) === nrm(x.s) ? '' : `<span class="cp-nom" title="${esc(x.nom)}">${esc(x.nom)}</span>`;
 
   function barra(cc, n) {
     if (!n) return '<span class="nd">sin traslape</span>';
@@ -356,14 +387,14 @@
     $('cp-res-hint').textContent = `${xs.length} universidades privadas · clic en una fila para ver el detalle`;
     const th = COLS_R.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t ? ` title="${c.t}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const rows = xs.map(x => `<tr class="row${x.cod === st.target ? ' sel' : ''}" data-cod="${x.cod}">
-      <td class="l"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag">${esc(x.seg)}</span></td>
+      <td class="l cp-uni"><span class="name">${esc(x.s)}</span>${nomLargo(x)}<span class="tag">${esc(x.seg)}</span></td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
       ${[1, 2, 3, 4].map(z => `<td>${x.zc[z] ? chipZ(z, x.zc[z]) : '<span class="nd">·</span>'}</td>`).join('')}
       <td class="l">${barra(x.cc, x.nTr)}</td>
       <td>${x.al ? Math.round(100 * x.alT / x.al) + '%' : '–'}</td>
       <td>${x.q14 || '<span class="nd">·</span>'}</td>
-      <td>${x.max == null ? '–' : f2(x.max)}</td>
-      <td><b>${x.ind == null ? '–' : f2(x.ind)}</b></td>
+      <td>${x.ge4 ? `<b>${x.ge4}</b>` : '<span class="nd">·</span>'}</td>
+      <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
     $('cp-res').innerHTML = `<tr>${th}</tr>${rows}`;
     $('cp-res').querySelectorAll('th').forEach(t => {
@@ -380,10 +411,10 @@
     // selector de universidad
     const opts = RES.res.slice().sort((a, b) => a.s.localeCompare(b.s, 'es'));
     if (!st.target || !opts.some(x => x.cod === st.target)) {
-      const top = RES.res.filter(x => x.ind != null).sort((a, b) => b.ind - a.ind)[0];
+      const top = RES.res.slice().sort((a, b) => b.rk - a.rk)[0];
       st.target = top ? top.cod : (opts[0] || {}).cod;
     }
-    $('cp-target').innerHTML = opts.map(x => `<option value="${x.cod}"${x.cod === st.target ? ' selected' : ''}>${esc(x.s)}${x.ind != null ? ' · ' + f2(x.ind) : ''}</option>`).join('');
+    $('cp-target').innerHTML = opts.map(x => `<option value="${x.cod}"${x.cod === st.target ? ' selected' : ''}>${esc(x.s)}${nrm(x.nom) === nrm(x.s) ? '' : ' — ' + esc(x.nom)}${x.cat != null ? ' · ' + CATS[x.cat] : ''}</option>`).join('');
   }
 
   const COLS_D = [
@@ -410,7 +441,7 @@
     fs.sort((a, b) => { const va = valD(a, k), vb = valD(b, k); return (va < vb ? -d : va > vb ? d : 0) || b.pond - a.pond || b.m.tot - a.m.tot; });
     const kk = (t, v, dd) => `<div class="kpi"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`;
     $('cp-det-kpis').innerHTML =
-      kk('Indicador', x.ind == null ? '–' : f2(x.ind), chipC(x.cat)) +
+      kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados Alto o más`) +
       kk('Mercados con traslape', `${x.nTr} <small>/ ${x.nMk}</small>`, `${x.al ? Math.round(100 * x.alT / x.al) : 0}% de sus ${fmt(x.al)} alumnos`) +
       kk('Por zona', [1, 2, 3, 4].map(z => chipZ(z, x.zc[z])).join(' '), 'Z1 · Z2 · Z3 · Z4') +
       kk('Fuera de zona segura', fmt(x.alZ2), 'alumnos de la universidad en Z2–Z4') +
@@ -458,8 +489,10 @@
         RAW = leer(wb);
         if (!RAW.periodos.length) throw new Error('No hay periodos comunes entre la hoja Laureate (Ciclo) y Base_Tuni.');
         if (!$('cp-per')) montar();
-        if (!RAW.periodos.includes(st.per)) st.per = RAW.periodos[RAW.periodos.length - 1];
-        $('cp-per').innerHTML = RAW.periodos.map(p => `<option${p === st.per ? ' selected' : ''}>${p}</option>`).join('');
+        if (st.per !== 'prom' && !RAW.periodos.includes(st.per)) st.per = RAW.periodos[RAW.periodos.length - 1];
+        const ult = RAW.periodos.slice(-N_PROM);
+        $('cp-per').innerHTML = RAW.periodos.map(p => `<option${p === st.per ? ' selected' : ''}>${p}</option>`).join('') +
+          `<option value="prom"${st.per === 'prom' ? ' selected' : ''}>Promedio últimos ${ult.length} ciclos (${ult[0]} a ${ult[ult.length - 1]})</option>`;
         recalcular();
       } catch (e) {
         console.error(e);
