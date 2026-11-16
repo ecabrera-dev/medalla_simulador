@@ -66,3 +66,8 @@ details.cp-riesgo[open]>summary{margin-bottom:14px}
 .tbl.cp td.cp-seg{white-space:nowrap}
 .cp-sg{display:inline-block;padding:0 6px;margin:0 3px 0 0;border-radius:4px;background:var(--na);color:var(--ink);font-size:11px;white-space:nowrap}
 .cp-n{cursor:help;min-width:26px;text-align:center}
+.tbl.cp td.cp-uni{max-width:none;width:120px;white-space:normal}
+.tbl.cp td.cp-uni .tag{display:block;margin:2px 0 0;width:max-content}
+.tbl.cp td.cp-reg{max-width:140px}
+.tbl.cp td.cp-zb{color:var(--muted)}
+#cp-kpis{grid-template-columns:repeat(auto-fit,minmax(170px,1fr))}
