@@ -60,3 +60,9 @@ details.cp-riesgo>summary h2::before{content:'▸';display:inline-block;width:16
 details.cp-riesgo[open]>summary h2::before{transform:rotate(90deg)}
 details.cp-riesgo[open]>summary{margin-bottom:14px}
 .cp-reset-w{display:flex;justify-content:flex-end;margin:-6px 0 10px}
+.cp-tgl{display:flex;align-items:center;gap:6px;margin-left:auto;font-size:12px;font-weight:400;color:var(--muted);cursor:pointer}
+.cp-tgl + .cp-busca{margin-left:10px}
+.tbl.cp td.cp-reg{max-width:170px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px}
+.tbl.cp td.cp-seg{white-space:nowrap}
+.cp-sg{display:inline-block;padding:0 6px;margin:0 3px 0 0;border-radius:4px;background:var(--na);color:var(--ink);font-size:11px;white-space:nowrap}
+.cp-n{cursor:help;min-width:26px;text-align:center}

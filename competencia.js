@@ -27,7 +27,7 @@
   const LIMA_LC = 'Lima Metropolitana y Callao';
 
   let RAW = null, RES = null;
-  const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo',
+  const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo', aso: 'si', base: false,
     sortR: {k: 'cat', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
     fZona: 'tras', fNivel: '', fMod: '', fGeo: '', abierto: null};
 
@@ -54,6 +54,8 @@
     if (n === 'a distancia' || n === 'virtual') return 'dist';
     return null;
   }
+  // Privada societaria: razón social con forma de sociedad (S.A.C., S.A., S.A.A., S.R.L., E.I.R.L.); si no, asociativa
+  const esSocietaria = nom => /(s\.?\s?a\.?\s?c\.?|s\.\s?a\.?(\s?a\.?)?|s\.\s?r\.\s?l\.?|e\.\s?i\.\s?r\.\s?l\.?)\s*$/i.test(String(nom || '').trim());
   const famOk = r3 => r3 != null && r3 !== '' && nrm(r3) !== 'no se encuentra';
 
   function leer(wb) {
@@ -61,7 +63,7 @@
     const T = tabla(wb, 'Base_Tuni'), H = 'Base_Tuni';
     const c = {cod: col(T, H, 'Código INEI'), nom: col(T, H, 'Nombre Entidad'), ges: col(T, H, 'Tipo_gest', -1, true),
       per: col(T, H, 'Periodo Estandarizado'), niv: col(T, H, 'Nivel Académico'), r3: col(T, H, 'Familia Sunedu'),
-      pL: col(T, H, 'PROVINCIA_LOCAL'), pA: col(T, H, 'PROVINCIA_AJUSTADA')};
+      dep: col(T, H, 'DEPARTAMENTO_LOCAL'), pL: col(T, H, 'PROVINCIA_LOCAL'), pA: col(T, H, 'PROVINCIA_AJUSTADA')};
     const iSep = col(T, H, 'Modalidades separadas', -1, true), iFin = col(T, H, 'Final', -1, true);
     c.semi = col(T, H, 'Semipresencial', iSep); c.pres = col(T, H, 'Presencial', iSep);
     c.p2 = col(T, H, 'Presencial (+semi)', iFin); c.dist = col(T, H, 'A distancia', iFin);
@@ -72,7 +74,7 @@
       if (!niv) continue;
       if (!famOk(r[c.r3])) { tSinFam++; continue; }
       tuni.push({cod: String(r[c.cod]).trim(), nom: r[c.nom], priv: r[c.ges] === 'Privado', per: String(r[c.per]), niv, r3: r[c.r3],
-        pL: r[c.pL], pA: r[c.pA], pres: num(r[c.pres]) || 0, semi: num(r[c.semi]) || 0, p2: num(r[c.p2]) || 0, dist: num(r[c.dist]) || 0});
+        dep: r[c.dep], pL: r[c.pL], pA: r[c.pA], pres: num(r[c.pres]) || 0, semi: num(r[c.semi]) || 0, p2: num(r[c.p2]) || 0, dist: num(r[c.dist]) || 0});
     }
     // ---- Laureate
     const L = tabla(wb, 'Laureate'), HL = 'Laureate';
@@ -134,7 +136,7 @@
   }
   const categoria = s => s == null ? null : Math.min(5, Math.max(0, Math.ceil(s - 1e-9)));
   // Categoría de la operación por CANTIDAD de mercados (no por promedio):
-  // cada mercado aporta la categoría de su zona (Z4 → Muy alto, Z3 → Alto, Z2 → Moderado, Z1 → Muy bajo);
+  // cada mercado aporta su categoría ponderada (zona × castigos por nivel y modalidad);
   // para cada nivel L, si al menos N mercados están en L o más, la operación es L;
   // si hay entre 1 y N-1, la operación es L-1. Se toma el máximo. Con traslape, mínimo «Muy bajo».
   function catOperacion(cc, nConf) {
@@ -185,6 +187,15 @@
       const geo = x.m === 'dist' ? 'Nacional' : (st.lima === 'sl' && x.callao ? R.callao : x.prov);
       add(x.niv, x.r3, mi, geo, 'A', x.n * fac);
     }
+    // regiones (departamentos) de cada universidad en el alcance
+    const regU = new Map();
+    for (const r of R.tuni) {
+      if (!PS.has(r.per) || !niveles.has(r.niv) || !r.dep) continue;
+      const v = MODS.reduce((s, [, campo]) => s + (r[campo] || 0), 0) * fac;
+      if (!(v > 0)) continue;
+      if (!regU.has(r.cod)) regU.set(r.cod, new Map());
+      const g = regU.get(r.cod); g.set(r.dep, (g.get(r.dep) || 0) + v);
+    }
     // indicadores por mercado
     const mercados = [...mk.values()];
     const porU = new Map();
@@ -212,19 +223,25 @@
     const res = [];
     for (const [cod] of porU) {
       if (!priv.has(cod)) continue;
+      const aso = !esSocietaria(priv.get(cod));
+      if (aso && st.aso === 'no') continue;
       const filas = evalua(cod), tr = filas.filter(f => f.tras);
-      const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0], ccP = [0, 0, 0, 0, 0, 0];
+      const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0], zcT = [[], [], [], [], []], ccT = [[], [], [], [], [], []];
       let suma = 0, max = null, al = 0, alT = 0, alZ2 = 0;
       for (const f of filas) {
         zc[f.z]++; al += f.B;
         if (!f.tras) continue;
-        cc[f.catZ]++; ccP[f.cat]++; suma += f.pond; max = Math.max(max ?? 0, f.pond); alT += f.B; if (f.z >= 2) alZ2 += f.B;
+        cc[f.cat]++; zcT[f.z].push(f); ccT[f.cat].push(f); suma += f.pond; max = Math.max(max ?? 0, f.pond); alT += f.B; if (f.z >= 2) alZ2 += f.B;
       }
       const ind = tr.length ? suma / tr.length : null;
+      const segM = new Map();
+      for (const f of filas) { const k = f.m.niv + ' ' + f.m.mod.toLowerCase(); segM.set(k, (segM.get(k) || 0) + f.B); }
+      const segs = [...segM].sort((a, b) => b[1] - a[1]);
+      const regs = [...(regU.get(cod) || new Map())].sort((a, b) => b[1] - a[1]);
       const cat = catOperacion(cc, p.nConf);
       const ge4 = cc[4] + cc[5];
       res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: (BD.unis.get(cod) || {}).seg || 'Resto de privadas',
-        al, nMk: filas.length, nTr: tr.length, zc, cc, ccP, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
+        al, nMk: filas.length, nTr: tr.length, zc, cc, zcT, ccT, segs, regs, aso, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
         rk: cat == null ? -1 : cat * 1e6 + (cat >= 1 ? cc.slice(cat).reduce((s, v) => s + v, 0) : 0) * 1e3 + (ind || 0)});
     }
     const mA = mercados.filter(m => m.A > 0);
@@ -247,6 +264,7 @@
         <div class="field"><span>Lima</span>${segBtns('cp-lima', [['lc', 'Lima + Callao'], ['sl', 'Solo Lima']], st.lima)}</div>
         <div class="field"><span>Universidades en el mercado</span>${segBtns('cp-univ', [['all', 'Privadas y públicas'], ['priv', 'Solo privadas']], st.univ)}</div>
         <div class="field"><span>Presencial y semipresencial</span>${segBtns('cp-mod', [['sep', 'Separados'], ['jun', 'Un solo mercado']], st.mod)}</div>
+        <div class="field"><span>Privadas asociativas como posible compra</span>${segBtns('cp-aso', [['si', 'Incluir'], ['no', 'Excluir']], st.aso)}</div>
         <div class="field"><span>Evaluación de riesgo</span>${segBtns('cp-alc', [['todo', 'Pregrado y posgrado'], ['pre', 'Solo pregrado']], st.alcance)}</div>
       </div>
     </section>
@@ -261,19 +279,20 @@
         <div class="cp-grp"><h3>Puntaje por zona <small>0–5</small></h3>
           <label>${chipZ(0)} Sin traslape <input type="number" value="0" disabled></label>
           ${[1, 2, 3, 4].map(z => inp('z' + z, `${chipZ(z)} ${ZONAS[z].n}`, 1)).join('')}</div>
-        <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad · para el puntaje ponderado</small></h3>
+        <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad</small></h3>
           ${inp('wPre', 'Pregrado', 0.05)}${inp('wMae', 'Maestría', 0.05)}${inp('wDoc', 'Doctorado', 0.05)}
           ${inp('wPres', 'Presencial', 0.05)}${inp('wSemi', 'Semipresencial', 0.05)}${inp('wVirt', 'Virtual (nacional)', 0.05)}</div>
         <div class="cp-grp"><h3>Categoría de la operación <small>por cantidad de mercados</small></h3>
           ${inp('nConf', 'Mercados para confirmar una categoría', 1)}
           ${inp('minMk', 'Tamaño mínimo del mercado (alumnos)', 50)}
-          <p class="cp-regla">Cada mercado cuenta según su zona: Z4 → ${chipC(5)}, Z3 → ${chipC(4)}, Z2 → ${chipC(3)}, Z1 → ${chipC(1)} (según el puntaje por zona).<br>
+          <p class="cp-regla">Mercado: puntaje ponderado = puntaje de la zona × peso del nivel × peso de la modalidad → ${CATS.map((c, i) => chipC(i)).join(' ')} (≤ 0, 1, 2, 3, 4, 5).<br>
           Operación: si al menos <b id="cp-n1">${DEF.nConf}</b> mercados están en una categoría o más, la operación toma esa categoría; si hay de 1 a <b id="cp-n2">${DEF.nConf - 1}</b>, toma la inmediata inferior. Se queda con la más alta. Los mercados con menos alumnos que el mínimo no cuentan como traslape.</p></div>
       </div>
     </details>
     <section class="kpis" id="cp-kpis"></section>
     <section class="card">
       <h2>Evaluación por posible compra <small id="cp-res-hint"></small>
+        <label class="cp-tgl"><input type="checkbox" id="cp-base"> Mostrar zonas base (Z1–Z4, sin castigos)</label>
         <input type="search" id="cp-busca" placeholder="Buscar universidad" class="cp-busca"></h2>
       <div class="tbl-wrap"><table class="tbl cp" id="cp-res"></table></div>
       <div class="legend" id="cp-leyenda"></div>
@@ -302,7 +321,7 @@
           <li><b>IHH:</b> suma de participaciones al cuadrado (en %), con el comprador como una sola empresa. ΔIHH = 2 × s<sub>A</sub> × s<sub>B</sub>; IHH post = IHH pre + ΔIHH.</li>
           <li><b>Zonas:</b> Z0 sin traslape (A o B sin alumnos en el mercado). Z1: IHH post &lt; 1,500; o 1,500–2,500 con Δ &lt; 200; o &gt; 2,500 con Δ &lt; 100. Z2: 1,500–2,500 con Δ ≥ 200. Z3: &gt; 2,500 con 100 ≤ Δ &lt; Δ alto. Z4: &gt; 2,500 con Δ ≥ Δ alto (250, supuesto de calibración, no es umbral Indecopi). Umbrales: Lineamientos de Indecopi (2023).</li>
           <li><b>Puntaje ponderado</b> del mercado = puntaje de la zona × peso del nivel × peso de la modalidad. <b>Categoría</b>: la primera cuyo límite superior (0, 1, 2, 3, 4, 5) es ≥ al puntaje.</li>
-          <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: cada mercado con traslape aporta la categoría de su zona (Z4 Muy alto, Z3 Alto, Z2 Moderado, Z1 Muy bajo); si al menos N mercados (3 por defecto) están en una categoría o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y tres lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
+          <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: cada mercado con traslape aporta su categoría ponderada (con los castigos por nivel y modalidad); si al menos N mercados (3 por defecto) están en una categoría o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y tres lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
           <li><b>Periodo:</b> un ciclo, o el promedio de alumnos de los últimos seis ciclos comunes a Base_Tuni y la hoja Laureate.</li>
           <li><b>Pregunta 14:</b> mercados con participación conjunta ≥ 20%. Solo indica reporte en el formulario; no cambia el riesgo.</li>
           <li>Esta pestaña es un análisis aparte: no cambia el simulador ni sus resultados.</li>
@@ -314,10 +333,11 @@
       $(id).querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
       st[key] = b.dataset.v; recalcular();
     });
-    seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-alc', 'alcance');
+    seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-alc', 'alcance'); seg('cp-aso', 'aso');
     $('cp-per').onchange = () => { st.per = $('cp-per').value; recalcular(); };
     Object.keys(DEF).forEach(k => $('cp-' + k).onchange = recalcular);
     $('cp-reset').onclick = () => { Object.keys(DEF).forEach(k => $('cp-' + k).value = DEF[k]); recalcular(); };
+    $('cp-base').onchange = () => { st.base = $('cp-base').checked; pintarRes(); };
     $('cp-busca').oninput = () => { st.busca = $('cp-busca').value; pintarRes(); };
     $('cp-target').onchange = () => { st.target = $('cp-target').value; st.abierto = null; pintarDet(); };
     $('cp-fz').onchange = () => { st.fZona = $('cp-fz').value; pintarDet(); };
@@ -349,29 +369,34 @@
   function pintarKpis() {
     const r = RES.res, conT = r.filter(x => x.nTr);
     const altas = conT.filter(x => x.cat >= 4).length, mods = conT.filter(x => x.cat === 3).length;
-    const z24 = r.reduce((s, x) => s + x.zc[2] + x.zc[3] + x.zc[4], 0);
     const k = (t, v, d, cl = '') => `<div class="kpi ${cl}"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
     $('cp-kpis').innerHTML =
-      k('Comprador', fmt(RES.alA), `alumnos en ${fmt(RES.nMA)} mercados relevantes`) +
-      k('Mercados relevantes', fmt(RES.mercados.length), 'nivel × familia × modalidad × ámbito') +
+      k('Comprador', fmt(RES.alA), 'alumnos en el alcance elegido') +
+      k('Mercados relevantes', `${fmt(RES.nMA)} <small>/ ${fmt(RES.mercados.length)}</small>`, `${fmt(RES.nMA)} con presencia del comprador, de ${fmt(RES.mercados.length)} en total`) +
       k('Posibles compras', fmt(r.length), `${fmt(conT.length)} con al menos un traslape`) +
-      k('Riesgo alto o muy alto', fmt(altas), `${fmt(mods)} con riesgo moderado`, altas ? 'alert' : '') +
-      k('Mercados Z2–Z4', fmt(z24), 'suma de todas las posibles compras');
+      k('Riesgo alto o muy alto', fmt(altas), `${fmt(mods)} con riesgo moderado`, altas ? 'alert' : '');
   }
 
   const COLS_R = [
     {k: 's', n: 'Universidad', l: true},
+    {k: 'reg', n: 'Regiones', l: true, t: 'Departamentos donde tiene alumnos en el alcance elegido (ordena por cantidad)'},
+    {k: 'seg', n: 'Segmentos que ofrece', l: true, ns: true, t: 'Nivel × modalidad donde tiene alumnos'},
     {k: 'al', n: 'Alumnos'},
     {k: 'nMk', n: 'Mercados', t: 'Mercados relevantes en los que está la universidad'},
     {k: 'nTr', n: 'Con traslape', t: 'Mercados donde también está el comprador'},
-    {k: 'z1', n: 'Z1'}, {k: 'z2', n: 'Z2'}, {k: 'z3', n: 'Z3'}, {k: 'z4', n: 'Z4'},
-    {k: 'dist', n: 'Mercados por categoría (ponderado)', l: true, ns: true},
-    {k: 'ge4', n: 'Z3 + Z4', t: 'Mercados en zona 3 o 4 (Alto o Muy alto)'},
+    ...[1, 2, 3, 4].map(z => ({k: 'z' + z, n: 'Z' + z, b: 1, t: 'Zona base, sin castigos por nivel ni modalidad'})),
+    ...[1, 2, 3, 4, 5].map(i => ({k: 'c' + i, n: CATS[i], t: 'Mercados con traslape en esta categoría ponderada (zona × castigos por nivel y modalidad)'})),
     {k: 'ind', n: 'Promedio pond.', t: 'Promedio de los puntajes ponderados de los mercados con traslape (referencial)'},
     {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada zona (ver Parámetros de riesgo)'},
   ];
-  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k === 'pT' ? (x.al ? x.alT / x.al : 0) : k === 'cat' ? x.rk : x[k];
-  const nomLargo = x => nrm(x.nom) === nrm(x.s) ? '' : `<span class="cp-nom" title="${esc(x.nom)}">${esc(x.nom)}</span>`;
+  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
+  // detalle al pasar el cursor por un conteo de mercados
+  const tipMk = fs => fs.slice().sort((a, b) => b.d - a.d).slice(0, 15).map(f =>
+    `• ${f.m.niv} · ${f.m.r3} · ${f.m.mod} · ${f.m.geo}: s A ${f1(f.m.sA)}%, s B ${f1(f.sB)}%, IHH post ${fmt(f.post)}, Δ ${fmt(f.d)}`).join('\n') +
+    (fs.length > 15 ? `\n… y ${fs.length - 15} más (ver el detalle de la compra)` : '');
+  const lista = (xs, n, f) => { const t = xs.map(f); return esc(t.slice(0, n).join(', ')) + (t.length > n ? ` <span class="nd">+${t.length - n}</span>` : ''); };
+  const segCorto = k => k.replace('Pregrado', 'Preg.').replace('Maestría', 'Maest.').replace('Doctorado', 'Doct.')
+    .replace('presencial + semi', 'pres.+semi').replace('semipresencial', 'semipres.').replace(/ presencial$/, ' pres.');
 
   function barra(cc, n) {
     if (!n) return '<span class="nd">sin traslape</span>';
@@ -384,13 +409,14 @@
     const {k, d} = st.sortR;
     xs.sort((a, b) => { const va = valR(a, k), vb = valR(b, k); return (va == null) - (vb == null) || (va < vb ? -d : va > vb ? d : 0) || b.al - a.al; });
     $('cp-res-hint').textContent = `${xs.length} universidades privadas · clic en una fila para ver el detalle`;
-    const th = COLS_R.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t ? ` title="${c.t}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
+    const th = COLS_R.filter(c => st.base || !c.b).map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t ? ` title="${c.t}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const rows = xs.map(x => `<tr class="row${x.cod === st.target ? ' sel' : ''}" data-cod="${x.cod}">
-      <td class="l cp-uni"><span class="name">${esc(x.s)}</span>${nomLargo(x)}<span class="tag">${esc(x.seg)}</span></td>
+      <td class="l cp-uni"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag">${esc(x.seg)}${x.aso ? ' · asociativa' : ''}</span></td>
+      <td class="l cp-reg" title="${esc(x.regs.map(([d, v]) => `${d}: ${fmt(v)} alumnos`).join('\n'))}">${x.regs.length ? lista(x.regs, 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
+      <td class="l cp-seg" title="${esc(x.segs.map(([sg, v]) => `${sg}: ${fmt(v)} alumnos`).join('\n'))}">${x.segs.slice(0, 3).map(([sg]) => `<span class="cp-sg">${esc(segCorto(sg))}</span>`).join('')}${x.segs.length > 3 ? `<span class="nd">+${x.segs.length - 3}</span>` : ''}</td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
-      ${[1, 2, 3, 4].map(z => `<td>${x.zc[z] ? chipZ(z, x.zc[z]) : '<span class="nd">·</span>'}</td>`).join('')}
-      <td class="l">${barra(x.ccP, x.nTr)}</td>
-      <td>${x.ge4 ? `<b>${x.ge4}</b>` : '<span class="nd">·</span>'}</td>
+      ${st.base ? [1, 2, 3, 4].map(z => `<td class="cp-zb">${x.zc[z] ? `<span class="cz z${z} cp-n" title="${esc(ZONAS[z].c + ' · ' + ZONAS[z].n + ' (sin castigos):\n' + tipMk(x.zcT[z]))}">${x.zc[z]}</span>` : '<span class="nd">·</span>'}</td>`).join('') : ''}
+      ${[1, 2, 3, 4, 5].map(c => `<td>${x.cc[c] ? `<span class="cc c${c} cp-n" title="${esc(CATS[c] + ' (ponderado):\n' + tipMk(x.ccT[c]))}">${x.cc[c]}</span>` : '<span class="nd">·</span>'}</td>`).join('')}
       <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
     $('cp-res').innerHTML = `<tr>${th}</tr>${rows}`;
@@ -403,8 +429,8 @@
       st.target = tr.dataset.cod; st.abierto = null; $('cp-target').value = st.target; pintarRes(); pintarDet();
       $('cp-det-card').scrollIntoView({behavior: 'smooth', block: 'start'});
     });
-    $('cp-leyenda').innerHTML = ZONAS.slice(1).map((z, i) => `<span>${chipZ(i + 1)} ${z.n}</span>`).join('') +
-      '<span style="margin-left:auto">Categorías: ' + CATS.map((c, i) => `<i class="c${i}"></i>${c}`).join(' ') + '</span>';
+    $('cp-leyenda').innerHTML = '<span>Columnas Muy bajo a Muy alto: mercados con traslape por categoría ponderada (zona × castigos por nivel y modalidad). Pasa el cursor sobre un número para ver esos mercados.</span>' +
+      (st.base ? '<span style="margin-left:auto">Zonas base: ' + ZONAS.slice(1).map((z, i) => `${chipZ(i + 1)} ${z.n}`).join(' ') + '</span>' : '');
     // selector de universidad
     const opts = RES.res.slice().sort((a, b) => a.s.localeCompare(b.s, 'es'));
     if (!st.target || !opts.some(x => x.cod === st.target)) {
@@ -438,7 +464,7 @@
     fs.sort((a, b) => { const va = valD(a, k), vb = valD(b, k); return (va < vb ? -d : va > vb ? d : 0) || b.pond - a.pond || b.m.tot - a.m.tot; });
     const kk = (t, v, dd) => `<div class="kpi"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`;
     $('cp-det-kpis').innerHTML =
-      kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados en Z3 o Z4`) +
+      kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados Alto o Muy alto (ponderado)`) +
       kk('Mercados con traslape', `${x.nTr} <small>/ ${x.nMk}</small>`, `${x.al ? Math.round(100 * x.alT / x.al) : 0}% de sus ${fmt(x.al)} alumnos`) +
       kk('Por zona', [1, 2, 3, 4].map(z => chipZ(z, x.zc[z])).join(' '), 'Z1 · Z2 · Z3 · Z4') +
       kk('Fuera de zona segura', fmt(x.alZ2), 'alumnos de la universidad en Z2–Z4') +
