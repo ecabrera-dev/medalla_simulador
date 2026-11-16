@@ -134,6 +134,7 @@
   }
   const categoria = s => s == null ? null : Math.min(5, Math.max(0, Math.ceil(s - 1e-9)));
   // Categoría de la operación por CANTIDAD de mercados (no por promedio):
+  // cada mercado aporta la categoría de su zona (Z4 → Muy alto, Z3 → Alto, Z2 → Moderado, Z1 → Muy bajo);
   // para cada nivel L, si al menos N mercados están en L o más, la operación es L;
   // si hay entre 1 y N-1, la operación es L-1. Se toma el máximo. Con traslape, mínimo «Muy bajo».
   function catOperacion(cc, nConf) {
@@ -212,18 +213,18 @@
     for (const [cod] of porU) {
       if (!priv.has(cod)) continue;
       const filas = evalua(cod), tr = filas.filter(f => f.tras);
-      const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0];
+      const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0], ccP = [0, 0, 0, 0, 0, 0];
       let suma = 0, max = null, al = 0, alT = 0, alZ2 = 0;
       for (const f of filas) {
         zc[f.z]++; al += f.B;
         if (!f.tras) continue;
-        cc[f.cat]++; suma += f.pond; max = Math.max(max ?? 0, f.pond); alT += f.B; if (f.z >= 2) alZ2 += f.B;
+        cc[f.catZ]++; ccP[f.cat]++; suma += f.pond; max = Math.max(max ?? 0, f.pond); alT += f.B; if (f.z >= 2) alZ2 += f.B;
       }
       const ind = tr.length ? suma / tr.length : null;
       const cat = catOperacion(cc, p.nConf);
       const ge4 = cc[4] + cc[5];
       res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: (BD.unis.get(cod) || {}).seg || 'Resto de privadas',
-        al, nMk: filas.length, nTr: tr.length, zc, cc, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
+        al, nMk: filas.length, nTr: tr.length, zc, cc, ccP, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
         rk: cat == null ? -1 : cat * 1e6 + (cat >= 1 ? cc.slice(cat).reduce((s, v) => s + v, 0) : 0) * 1e3 + (ind || 0)});
     }
     const mA = mercados.filter(m => m.A > 0);
@@ -249,9 +250,9 @@
         <div class="field"><span>Evaluación de riesgo</span>${segBtns('cp-alc', [['todo', 'Pregrado y posgrado'], ['pre', 'Solo pregrado']], st.alcance)}</div>
       </div>
     </section>
-    <section class="card">
-      <h2>Parámetros de riesgo <small>editables; «Restablecer» vuelve a los valores de referencia</small>
-        <button class="btn ghost sm" id="cp-reset" style="margin-left:auto">Restablecer</button></h2>
+    <details class="card cp-riesgo">
+      <summary><h2>Parámetros de riesgo <small>clic para desplegar · umbrales IHH, puntajes, castigos y regla de categoría</small></h2></summary>
+      <div class="cp-reset-w"><button class="btn ghost sm" id="cp-reset">Restablecer valores de referencia</button></div>
       <div class="cp-pr">
         <div class="cp-grp"><h3>Umbrales IHH <small>Indecopi (2023)</small></h3>
           ${inp('t1', 'IHH post, umbral inferior', 100)}${inp('t2', 'IHH post, umbral superior', 100)}
@@ -260,16 +261,16 @@
         <div class="cp-grp"><h3>Puntaje por zona <small>0–5</small></h3>
           <label>${chipZ(0)} Sin traslape <input type="number" value="0" disabled></label>
           ${[1, 2, 3, 4].map(z => inp('z' + z, `${chipZ(z)} ${ZONAS[z].n}`, 1)).join('')}</div>
-        <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad</small></h3>
+        <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad · para el puntaje ponderado</small></h3>
           ${inp('wPre', 'Pregrado', 0.05)}${inp('wMae', 'Maestría', 0.05)}${inp('wDoc', 'Doctorado', 0.05)}
           ${inp('wPres', 'Presencial', 0.05)}${inp('wSemi', 'Semipresencial', 0.05)}${inp('wVirt', 'Virtual (nacional)', 0.05)}</div>
         <div class="cp-grp"><h3>Categoría de la operación <small>por cantidad de mercados</small></h3>
           ${inp('nConf', 'Mercados para confirmar una categoría', 1)}
           ${inp('minMk', 'Tamaño mínimo del mercado (alumnos)', 50)}
-          <p class="cp-regla">Mercado: puntaje ponderado = zona × peso nivel × peso modalidad → ${CATS.map((c, i) => `${chipC(i)}`).join(' ')} (≤ 0, 1, 2, 3, 4, 5).<br>
+          <p class="cp-regla">Cada mercado cuenta según su zona: Z4 → ${chipC(5)}, Z3 → ${chipC(4)}, Z2 → ${chipC(3)}, Z1 → ${chipC(1)} (según el puntaje por zona).<br>
           Operación: si al menos <b id="cp-n1">${DEF.nConf}</b> mercados están en una categoría o más, la operación toma esa categoría; si hay de 1 a <b id="cp-n2">${DEF.nConf - 1}</b>, toma la inmediata inferior. Se queda con la más alta. Los mercados con menos alumnos que el mínimo no cuentan como traslape.</p></div>
       </div>
-    </section>
+    </details>
     <section class="kpis" id="cp-kpis"></section>
     <section class="card">
       <h2>Evaluación por posible compra <small id="cp-res-hint"></small>
@@ -301,7 +302,7 @@
           <li><b>IHH:</b> suma de participaciones al cuadrado (en %), con el comprador como una sola empresa. ΔIHH = 2 × s<sub>A</sub> × s<sub>B</sub>; IHH post = IHH pre + ΔIHH.</li>
           <li><b>Zonas:</b> Z0 sin traslape (A o B sin alumnos en el mercado). Z1: IHH post &lt; 1,500; o 1,500–2,500 con Δ &lt; 200; o &gt; 2,500 con Δ &lt; 100. Z2: 1,500–2,500 con Δ ≥ 200. Z3: &gt; 2,500 con 100 ≤ Δ &lt; Δ alto. Z4: &gt; 2,500 con Δ ≥ Δ alto (250, supuesto de calibración, no es umbral Indecopi). Umbrales: Lineamientos de Indecopi (2023).</li>
           <li><b>Puntaje ponderado</b> del mercado = puntaje de la zona × peso del nivel × peso de la modalidad. <b>Categoría</b>: la primera cuyo límite superior (0, 1, 2, 3, 4, 5) es ≥ al puntaje.</li>
-          <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: si al menos N mercados (3 por defecto) están en una categoría ponderada o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y tres lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
+          <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: cada mercado con traslape aporta la categoría de su zona (Z4 Muy alto, Z3 Alto, Z2 Moderado, Z1 Muy bajo); si al menos N mercados (3 por defecto) están en una categoría o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y tres lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
           <li><b>Periodo:</b> un ciclo, o el promedio de alumnos de los últimos seis ciclos comunes a Base_Tuni y la hoja Laureate.</li>
           <li><b>Pregunta 14:</b> mercados con participación conjunta ≥ 20%. Solo indica reporte en el formulario; no cambia el riesgo.</li>
           <li>Esta pestaña es un análisis aparte: no cambia el simulador ni sus resultados.</li>
@@ -365,11 +366,9 @@
     {k: 'nTr', n: 'Con traslape', t: 'Mercados donde también está el comprador'},
     {k: 'z1', n: 'Z1'}, {k: 'z2', n: 'Z2'}, {k: 'z3', n: 'Z3'}, {k: 'z4', n: 'Z4'},
     {k: 'dist', n: 'Mercados por categoría (ponderado)', l: true, ns: true},
-    {k: 'pT', n: '% alumnos en traslape', t: 'Alumnos de la universidad en mercados con traslape / sus alumnos en el alcance'},
-    {k: 'q14', n: 'Preg. 14', t: 'Mercados con participación conjunta ≥ umbral'},
-    {k: 'ge4', n: 'Alto o más', t: 'Mercados con categoría ponderada Alto o Muy alto'},
+    {k: 'ge4', n: 'Z3 + Z4', t: 'Mercados en zona 3 o 4 (Alto o Muy alto)'},
     {k: 'ind', n: 'Promedio pond.', t: 'Promedio de los puntajes ponderados de los mercados con traslape (referencial)'},
-    {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada categoría (ver Parámetros de riesgo)'},
+    {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada zona (ver Parámetros de riesgo)'},
   ];
   const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k === 'pT' ? (x.al ? x.alT / x.al : 0) : k === 'cat' ? x.rk : x[k];
   const nomLargo = x => nrm(x.nom) === nrm(x.s) ? '' : `<span class="cp-nom" title="${esc(x.nom)}">${esc(x.nom)}</span>`;
@@ -390,9 +389,7 @@
       <td class="l cp-uni"><span class="name">${esc(x.s)}</span>${nomLargo(x)}<span class="tag">${esc(x.seg)}</span></td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
       ${[1, 2, 3, 4].map(z => `<td>${x.zc[z] ? chipZ(z, x.zc[z]) : '<span class="nd">·</span>'}</td>`).join('')}
-      <td class="l">${barra(x.cc, x.nTr)}</td>
-      <td>${x.al ? Math.round(100 * x.alT / x.al) + '%' : '–'}</td>
-      <td>${x.q14 || '<span class="nd">·</span>'}</td>
+      <td class="l">${barra(x.ccP, x.nTr)}</td>
       <td>${x.ge4 ? `<b>${x.ge4}</b>` : '<span class="nd">·</span>'}</td>
       <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
@@ -441,7 +438,7 @@
     fs.sort((a, b) => { const va = valD(a, k), vb = valD(b, k); return (va < vb ? -d : va > vb ? d : 0) || b.pond - a.pond || b.m.tot - a.m.tot; });
     const kk = (t, v, dd) => `<div class="kpi"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`;
     $('cp-det-kpis').innerHTML =
-      kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados Alto o más`) +
+      kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados en Z3 o Z4`) +
       kk('Mercados con traslape', `${x.nTr} <small>/ ${x.nMk}</small>`, `${x.al ? Math.round(100 * x.alT / x.al) : 0}% de sus ${fmt(x.al)} alumnos`) +
       kk('Por zona', [1, 2, 3, 4].map(z => chipZ(z, x.zc[z])).join(' '), 'Z1 · Z2 · Z3 · Z4') +
       kk('Fuera de zona segura', fmt(x.alZ2), 'alumnos de la universidad en Z2–Z4') +

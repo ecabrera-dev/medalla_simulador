@@ -53,3 +53,10 @@
 .cp-grp input:disabled{background:var(--na);color:var(--muted)}
 .cp-regla{font-size:12px;color:var(--muted);margin:4px 0 0;line-height:1.7}
 .cp-nota{font-size:12px;color:var(--muted);margin:12px 0 0}
+details.cp-riesgo>summary{list-style:none;cursor:pointer}
+details.cp-riesgo>summary::-webkit-details-marker{display:none}
+details.cp-riesgo>summary h2{margin:0}
+details.cp-riesgo>summary h2::before{content:'▸';display:inline-block;width:16px;color:var(--muted);transition:transform .15s}
+details.cp-riesgo[open]>summary h2::before{transform:rotate(90deg)}
+details.cp-riesgo[open]>summary{margin-bottom:14px}
+.cp-reset-w{display:flex;justify-content:flex-end;margin:-6px 0 10px}
