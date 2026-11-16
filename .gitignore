@@ -1,0 +1,11 @@
+# Excel abierto (archivo de bloqueo de Office)
+~$*
+# Python
+__pycache__/
+*.pyc
+# Sistema
+.DS_Store
+Thumbs.db
+desktop.ini
+# CSV que exporta el validador
+salida/

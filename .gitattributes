@@ -1,0 +1,3 @@
+# El Excel va como archivo normal (no Git LFS): GitHub Pages no sirve archivos de LFS.
+*.xlsx binary
+*.xlsm binary

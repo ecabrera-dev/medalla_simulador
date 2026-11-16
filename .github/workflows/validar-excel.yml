@@ -1,0 +1,45 @@
+# Valida el Excel Olímpico cada vez que cambia (push o pull request).
+# Si hay errores el check queda en rojo; el detalle aparece en el resumen del job y como anotaciones.
+# Las tres hojas que lee el simulador quedan como CSV en los artefactos del run, para comparar versiones.
+name: Validar Excel
+
+on:
+  push:
+    paths:
+      - "data/**"
+      - "scripts/validar_excel.py"
+      - ".github/workflows/validar-excel.yml"
+  pull_request:
+    paths:
+      - "data/**"
+      - "scripts/validar_excel.py"
+      - ".github/workflows/validar-excel.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  validar:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - run: pip install openpyxl==3.1.5
+
+      - name: Validar
+        run: python scripts/validar_excel.py "data/Olimpico Clasificaciones.xlsx" --csv salida
+
+      - name: Guardar CSV de las hojas
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: hojas-csv
+          path: salida/
+          retention-days: 30
+          if-no-files-found: ignore
