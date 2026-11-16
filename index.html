@@ -137,6 +137,7 @@
   .fuente .warn{color:var(--warn-ink)}
   .fuente label{color:var(--accent);cursor:pointer;text-decoration:underline}
 </style>
+<link rel="stylesheet" href="competencia.css">
 </head>
 <body>
 <div class="wrap">
@@ -149,6 +150,9 @@
     <div class="brand">APOYO Consultoría<br><span id="fecha"></span></div>
   </div>
 
+  <nav class="tabs" id="tabs"><button data-t="sim" class="on">Simulador</button><button data-t="comp">Evaluación de competencia</button></nav>
+
+  <div id="tab-sim">
   <div class="fuente" id="fuente"></div>
 
   <section class="card">
@@ -258,6 +262,9 @@
       </ul>
     </details>
   </section>
+  </div>
+
+  <div id="tab-comp" hidden></div>
 </div>
 <div id="tip"></div>
 <div id="carga"><div class="box">
@@ -624,7 +631,7 @@ return {seleccion: () => [...st.sel].map(u => U[u].cod), render};
 // Base_Financieros (financieros por año) y Base_Universidades (sigla, grupo, segmento, tipo de entidad).
 // Se buscan las columnas por su nombre en la fila 1, así que se pueden agregar columnas al Excel sin romper nada.
 const ARCHIVO = 'data/Olimpico Clasificaciones.xlsx';
-const HOJAS = ['Base_Tuni', 'Base_Financieros', 'Base_Universidades'];
+const HOJAS = ['Base_Tuni', 'Base_Financieros', 'Base_Universidades', 'Laureate'];   // Laureate: solo la pestaña de competencia
 const RAMAS_CORTAS = {"Ciencias Administrativas y Derecho": "Administración y Derecho", "Agricultura, Silvicultura, Pesca y Veterinaria": "Agro y Veterinaria", "Arte y Humanidades": "Arte y Humanidades", "Ciencias Naturales, Matemáticas y Estadística": "Ciencias Naturales", "Ciencias Sociales, Periodismo e Información": "Ciencias Sociales y Comunicación", "Educación": "Educación", "Ingeniería, Industria y Construcción": "Ingeniería", "Salud y bienestar": "Salud", "Servicios": "Servicios", "Tecnología de la Información y la Comunicación": "TIC", "Sin información": "Sin información"};
 const RAMAS3_CORTAS = {"Industria y Productos Transformados (excepto alimentos, textil, agro, minas y petróleo)": "Ingeniería Industrial", "Técnicas Audiovisuales y de Producción para Medios de Comunicación": "Técnicas Audiovisuales", "Tecnología de Diagnóstico y Tratamiento Médico": "Tecnología Médica", "Gestión Financiera, Administración Bancaria y Seguros": "Gestión Financiera y Banca", "Viajes, Turismo y Actividades Recreativas": "Turismo", "Hotelería, Restaurantes y Gastronomía": "Hotelería y Gastronomía", "Vehículos, Barcos y Aeronaves Motorizadas": "Vehículos y Aeronaves", "Diseño Industrial, de Modas e Interiores": "Diseño", "Otros Programas en Administración y Comercio": "Otros en Administración"};
 const SIN_INFO = 'Sin información';
@@ -789,6 +796,7 @@ function abrir(buf, meta) {
       el('finSel').innerHTML = '<option value="ult">Último disponible</option>' + anios.map(a => `<option>${a}</option>`).join('');
       APP = null;
       arrancar();
+      if (window.COMP) COMP.cargar(wb);   // pestaña de competencia: análisis aparte, no cambia el simulador
       el('carga').style.display = 'none';
       console.log(`Excel leído en ${Math.round(performance.now() - t0)} ms`);
     } catch (e) {
@@ -815,6 +823,16 @@ addEventListener('drop', e => { e.preventDefault(); el('drop').classList.remove(
 ['perSel', 'modSel', 'finSel'].forEach(id => el(id).onchange = arrancar);
 let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() => APP && APP.render(), 150); });
 
+// pestañas: Simulador / Evaluación de competencia (#competencia en la URL abre la segunda)
+function pestana(t) {
+  document.querySelectorAll('#tabs button').forEach(b => b.classList.toggle('on', b.dataset.t === t));
+  el('tab-sim').hidden = t !== 'sim'; el('tab-comp').hidden = t !== 'comp';
+  history.replaceState(null, '', t === 'comp' ? '#competencia' : location.pathname + location.search);
+  if (t === 'sim' && APP) APP.render();   // el gráfico se mide al pintarse
+}
+document.querySelectorAll('#tabs button').forEach(b => b.onclick = () => pestana(b.dataset.t));
+if (location.hash === '#competencia') pestana('comp');
+
 (async () => {
   if (typeof XLSX === 'undefined') {
     el('cargaT').textContent = 'No se pudo cargar la librería de lectura de Excel';
@@ -833,5 +851,6 @@ let rz; addEventListener('resize', () => { clearTimeout(rz); rz = setTimeout(() 
   }
 })();
 </script>
+<script src="competencia.js"></script>
 </body>
 </html>
