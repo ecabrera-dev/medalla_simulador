@@ -14,6 +14,10 @@
   const DEF = {t1: 1500, t2: 2500, d1: 200, d2: 100, dAlto: 250, q14: 20,
     z1: 1, z2: 3, z3: 4, z4: 5, wPre: 1, wMae: 0.75, wDoc: 0.75, wPres: 1, wSemi: 1, wVirt: 0.5,
     nConf: 5, minMk: 0};
+  // Grupos económicos que cuentan como un solo agente en el IHH (cada universidad se evalúa aparte como posible compra)
+  const GRUPOS = [{id: 'G:acuna', n: 'Grupo César Acuña', cods: ['260000052', '260000072', '260000096']}];   // UCV, USS, Autónoma del Perú
+  const GRUPO_DE = new Map(GRUPOS.flatMap(g => g.cods.map(c => [c, g])));
+  const FUT_DEF = 'Chiclayo, Ica';   // provincias donde Laureate tendrá presencia
   const N_PROM = 6;   // «Promedio de los últimos seis ciclos»
   const CATS = ['Nulo', 'Muy bajo', 'Bajo', 'Moderado', 'Alto', 'Muy alto'];
   const ZONAS = [
@@ -27,7 +31,7 @@
   const LIMA_LC = 'Lima Metropolitana y Callao';
 
   let RAW = null, RES = null;
-  const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo', aso: 'si', base: false,
+  const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo', aso: 'si', sinCast: false,
     sortR: {k: 'cat', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
     fZona: 'tras', fNivel: '', fMod: '', fGeo: '', abierto: null};
 
@@ -174,6 +178,7 @@
       ? [['Presencial', 'pres', p.wPres], ['Semipresencial', 'semi', p.wSemi], ['Virtual', 'dist', p.wVirt]]
       : [['Presencial + semi', 'p2', p.wPres], ['Virtual', 'dist', p.wVirt]];
     const wNiv = {Pregrado: p.wPre, 'Maestría': p.wMae, Doctorado: p.wDoc};
+    const fut = new Set(String($('cp-fut') ? $('cp-fut').value : FUT_DEF).split(',').map(x => nrm(x)).filter(Boolean));
     const mk = new Map();
     const add = (niv, r3, mi, geo, firm, v) => {
       const k = niv + '|' + r3 + '|' + mi + '|' + geo;
@@ -214,12 +219,18 @@
     const mercados = [...mk.values()];
     const porU = new Map();
     for (const m of mercados) {
+      // IHH por agente económico: las universidades de un mismo grupo suman una sola participación
+      m.ag = new Map();
+      for (const [firm, v] of m.f) { const g = GRUPO_DE.get(firm), k = g ? g.id : firm; m.ag.set(k, (m.ag.get(k) || 0) + v); }
       let hhi = 0;
-      for (const v of m.f.values()) hhi += (100 * v / m.tot) ** 2;
+      for (const v of m.ag.values()) hhi += (100 * v / m.tot) ** 2;
       m.hhi = hhi; m.A = m.f.get('A') || 0; m.sA = 100 * m.A / m.tot;
-      m.w = wNiv[m.niv] * MODS[m.mi][2];
+      m.w = st.sinCast ? 1 : wNiv[m.niv] * MODS[m.mi][2];
+      m.fut = m.A === 0 && m.geo !== 'Nacional' && fut.has(nrm(m.geo));
       for (const [firm, v] of m.f) if (firm !== 'A') { if (!porU.has(firm)) porU.set(firm, []); porU.get(firm).push(m); }
     }
+    // productos (nivel × familia × modalidad) que el comprador ya ofrece en algún ámbito
+    const prodA = new Set(mercados.filter(m => m.A > 0).map(m => m.niv + '|' + m.r3 + '|' + m.mi));
     // candidatas: privadas fuera del comprador
     const priv = new Map(); for (const r of R.tuni) if (r.priv) priv.set(r.cod, r.nom);
     const zs = [0, p.z1, p.z2, p.z3, p.z4];
@@ -227,10 +238,13 @@
       const filas = [];
       for (const m of porU.get(cod) || []) {
         const B = m.f.get(cod), sB = 100 * B / m.tot;
+        const g = GRUPO_DE.get(cod), sG = g ? 100 * m.ag.get(g.id) / m.tot : sB;   // participación del grupo de la universidad
         const tras = m.A > 0 && B > 0 && m.tot >= p.minMk;   // mercados por debajo del tamaño mínimo no cuentan
-        const d = tras ? 2 * m.sA * sB : 0, post = m.hhi + d;
+        // ΔIHH = (sA+sB)² + (sG−sB)² − sA² − sG² = 2·sB·(sA + sB − sG); sin grupo (sG = sB) queda 2·sA·sB
+        const d = tras ? 2 * sB * (m.sA + sB - sG) : 0, post = m.hhi + d;
+        const fut = m.fut && B > 0, futP = fut && prodA.has(m.niv + '|' + m.r3 + '|' + m.mi);
         const z = tras ? zona(post, d, p) : 0, sc = zs[z], pond = sc * m.w;
-        filas.push({m, B, sB, tras, d, post, z, sc, pond, cat: categoria(pond), catZ: categoria(sc), sJ: m.sA + sB, q14: tras && m.sA + sB >= p.q14});
+        filas.push({m, B, sB, sG, g, fut, futP, tras, d, post, z, sc, pond, cat: categoria(pond), catZ: categoria(sc), sJ: m.sA + sB, q14: tras && m.sA + sB >= p.q14});
       }
       return filas;
     };
@@ -254,12 +268,15 @@
       const regs = [...(regU.get(cod) || new Map())].sort((a, b) => b[1] - a[1]);
       const cat = catOperacion(cc, p.nConf);
       const ge4 = cc[4] + cc[5];
+      const fF = filas.filter(f => f.fut), fP = fF.filter(f => f.futP);
+      const futr = {n: fF.length, nP: fP.length, al: fF.reduce((s, f) => s + f.B, 0), alP: fP.reduce((s, f) => s + f.B, 0),
+        geos: [...new Set(fF.map(f => f.m.geo))]};
       res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: (BD.unis.get(cod) || {}).seg || 'Resto de privadas',
-        al, nMk: filas.length, nTr: tr.length, zc, cc, segs, regs, aso, ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
+        al, nMk: filas.length, nTr: tr.length, zc, cc, segs, regs, aso, futr, grupo: GRUPO_DE.get(cod), ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
         rk: cat == null ? -1 : cat * 1e6 + (cat >= 1 ? cc.slice(cat).reduce((s, v) => s + v, 0) : 0) * 1e3 + (ind || 0)});
     }
     const mA = mercados.filter(m => m.A > 0);
-    RES = {p, mercados, res, evalua, alA: mA.reduce((s, m) => s + m.A, 0), nMA: mA.length};
+    RES = {p, mercados, res, evalua, fut, alA: mA.reduce((s, m) => s + m.A, 0), nMA: mA.length};
   }
 
   // ------------------------------------------------------------------ interfaz
@@ -299,6 +316,7 @@
         <div class="cp-grp"><h3>Categoría de la operación <small>por cantidad de mercados</small></h3>
           ${inp('nConf', 'Mercados para confirmar una categoría', 1)}
           ${inp('minMk', 'Tamaño mínimo del mercado (alumnos)', 50)}
+          <label>Presencia futura de Laureate (provincias) <input type="text" id="cp-fut" value="${FUT_DEF}" class="cp-fut"></label>
           <p class="cp-regla">Mercado: puntaje ponderado = puntaje de la zona × peso del nivel × peso de la modalidad → ${CATS.map((c, i) => chipC(i)).join(' ')} (≤ 0, 1, 2, 3, 4, 5).<br>
           Operación: si al menos <b id="cp-n1">${DEF.nConf}</b> mercados están en una categoría o más, la operación toma esa categoría; si hay de 1 a <b id="cp-n2">${DEF.nConf - 1}</b>, toma la inmediata inferior. Se queda con la más alta. Los mercados con menos alumnos que el mínimo no cuentan como traslape.</p></div>
       </div>
@@ -306,7 +324,7 @@
     <section class="kpis" id="cp-kpis"></section>
     <section class="card">
       <h2>Evaluación por posible compra <small id="cp-res-hint"></small>
-        <label class="cp-tgl"><input type="checkbox" id="cp-base"> Mostrar zonas base (Z1–Z4, sin castigos)</label>
+        <label class="cp-tgl" title="Peso 1 para todos los niveles y modalidades: la categoría de cada mercado sale solo de su zona"><input type="checkbox" id="cp-sinc"> Sin castigos por nivel y modalidad</label>
         <input type="search" id="cp-busca" placeholder="Buscar universidad" class="cp-busca"></h2>
       <div class="tbl-wrap"><table class="tbl cp" id="cp-res"></table></div>
       <div class="legend" id="cp-leyenda"></div>
@@ -316,7 +334,7 @@
       <div class="controls" style="margin-bottom:14px">
         <div class="field"><span>Universidad</span><select id="cp-target"></select></div>
         <div class="field"><span>Mercados</span><select id="cp-fz">
-          <option value="tras">Con traslape</option><option value="z2">Fuera de zona segura (Z2–Z4)</option><option value="todos">Todos donde está la universidad</option></select></div>
+          <option value="tras">Con traslape</option><option value="z2">Fuera de zona segura (Z2–Z4)</option><option value="fut">Traslape futuro (presencia futura de Laureate)</option><option value="todos">Todos donde está la universidad</option></select></div>
         <div class="field"><span>Nivel</span><select id="cp-fn"><option value="">Todos</option>${NIVELES.map(n => `<option>${n}</option>`).join('')}</select></div>
         <div class="field"><span>Modalidad</span><select id="cp-fm"></select></div>
         <div class="field"><span>Ámbito</span><select id="cp-fg"></select></div>
@@ -338,6 +356,9 @@
           <li><b>Categoría de la operación</b>, por cantidad de mercados y no por promedio: cada mercado con traslape aporta su categoría ponderada (con los castigos por nivel y modalidad); si al menos N mercados (5 por defecto) están en una categoría o más alta, la operación toma esa categoría; si hay entre 1 y N−1, toma la inmediata inferior; se queda con la más alta. Así, un mercado Muy alto basta para Alto, y cinco lo confirman como Muy alto, sin importar cuántos mercados Z1 tenga la universidad. El promedio ponderado se muestra solo como referencia.</li>
           <li><b>Periodo:</b> un ciclo, o el promedio de alumnos de los últimos seis ciclos comunes a Base_Tuni y la hoja Laureate.</li>
           <li><b>Pregunta 14:</b> mercados con participación conjunta ≥ 20%. Solo indica reporte en el formulario; no cambia el riesgo.</li>
+          <li><b>Grupos económicos:</b> el Grupo César Acuña (UCV, USS y Autónoma del Perú) cuenta como un solo agente en el IHH. Cada universidad se evalúa aparte como posible compra: ΔIHH = 2 × s<sub>B</sub> × (s<sub>A</sub> + s<sub>B</sub> − s<sub>Grupo</sub>), que equivale a 2 × s<sub>A</sub> × s<sub>B</sub> cuando la universidad es la única del grupo en el mercado.</li>
+          <li><b>Traslape futuro:</b> mercados presenciales y semipresenciales de las provincias donde Laureate tendrá presencia (Chiclayo e Ica, editable en Parámetros de riesgo) en los que hoy el comprador no tiene alumnos. No entran en la categoría; el número ⚠ cuenta los de carreras que el comprador ya ofrece en otra provincia.</li>
+          <li><b>Sin castigos:</b> la casilla junto al buscador pone peso 1 a todos los niveles y modalidades, de modo que la categoría de cada mercado sale solo de su zona.</li>
           <li>Esta pestaña es un análisis aparte: no cambia el simulador ni sus resultados.</li>
         </ul>
       </details>
@@ -350,8 +371,9 @@
     seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-alc', 'alcance'); seg('cp-aso', 'aso');
     $('cp-per').onchange = () => { st.per = $('cp-per').value; recalcular(); };
     Object.keys(DEF).forEach(k => $('cp-' + k).onchange = recalcular);
-    $('cp-reset').onclick = () => { Object.keys(DEF).forEach(k => $('cp-' + k).value = DEF[k]); recalcular(); };
-    $('cp-base').onchange = () => { st.base = $('cp-base').checked; pintarRes(); };
+    $('cp-fut').onchange = recalcular;
+    $('cp-reset').onclick = () => { Object.keys(DEF).forEach(k => $('cp-' + k).value = DEF[k]); $('cp-fut').value = FUT_DEF; recalcular(); };
+    $('cp-sinc').onchange = () => { st.sinCast = $('cp-sinc').checked; recalcular(); };
     $('cp-busca').oninput = () => { st.busca = $('cp-busca').value; pintarRes(); };
     $('cp-target').onchange = () => { st.target = $('cp-target').value; st.abierto = null; pintarDet(); };
     $('cp-fz').onchange = () => { st.fZona = $('cp-fz').value; pintarDet(); };
@@ -399,13 +421,13 @@
     {k: 'al', n: 'Alumnos'},
     {k: 'nMk', n: 'Mercados', t: 'Mercados relevantes en los que está la universidad'},
     {k: 'nTr', n: 'Con traslape', t: 'Mercados donde también está el comprador'},
-    ...[0, 1, 2, 3, 4].map(z => ({k: 'z' + z, n: 'Z' + z, b: 1, tf: p => tipZ(z, p)})),
     ...[0, 1, 2, 3, 4, 5].map(i => ({k: 'c' + i, n: CATS[i], tf: p => tipC(i, p)})),
+    {k: 'fut', n: 'Traslape futuro', tf: () => tipFut()},
     {k: 'dist', n: 'Resumen', l: true, ns: true, t: 'Mercados con traslape por categoría ponderada'},
     {k: 'ind', n: 'Promedio pond.', t: 'Promedio de los puntajes ponderados de los mercados con traslape (referencial)'},
     {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada zona (ver Parámetros de riesgo)'},
   ];
-  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k[0] === 'z' && k.length === 2 ? x.zc[+k[1]] : k === 'c0' ? x.zc[0] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
+  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k === 'fut' ? x.futr.nP * 1e3 + x.futr.n : k === 'c0' ? x.zc[0] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
   // explicación breve de cada zona y categoría (con los parámetros vigentes)
   const n0 = v => v.toLocaleString('en-US');
   function tipZ(z, p) {
@@ -420,7 +442,15 @@
     return `Puntaje ponderado = puntaje de la zona × peso del nivel × peso de la modalidad, mayor que ${c - 1} y hasta ${c}.`;
   }
   const lista = (xs, n, f) => { const t = xs.map(f); return esc(t.slice(0, n).join(', ')) + (t.length > n ? ` <span class="nd">+${t.length - n}</span>` : ''); };
-  const NIV_C = {Pregrado: 'Preg.', 'Maestría': 'Maest.', Doctorado: 'Doct.'};
+  const NIV_C = {Pregrado: 'Pre', 'Maestría': 'Mae', Doctorado: 'Doc'};
+  const futTxt = () => String($('cp-fut').value).split(',').map(x => x.trim()).filter(Boolean).join(' y ') || '—';
+  const tipFut = () => `Mercados presenciales/semipresenciales en ${futTxt()}, donde Laureate tendrá presencia y hoy no tiene alumnos. El número es cuántos de esos mercados son de una carrera (nivel × familia × modalidad) que el comprador ya ofrece en otra provincia.`;
+  function celFut(x) {
+    const f = x.futr;
+    if (!f.n) return '<span class="nd">·</span>';
+    const t = `${f.geos.join(', ')}: la universidad está en ${f.n} mercados (${fmt(f.al)} alumnos). En ${f.nP} el comprador ya ofrece esa carrera en otra provincia (${fmt(f.alP)} alumnos).`;
+    return `<span class="cp-fut-b${f.nP ? '' : ' off'}" title="${esc(t)}">⚠ ${f.nP}</span>`;
+  }
 
   function barra(cc, n) {
     if (!n) return '<span class="nd">sin traslape</span>';
@@ -433,14 +463,14 @@
     const {k, d} = st.sortR;
     xs.sort((a, b) => { const va = valR(a, k), vb = valR(b, k); return (va == null) - (vb == null) || (va < vb ? -d : va > vb ? d : 0) || b.al - a.al; });
     $('cp-res-hint').textContent = `${xs.length} universidades privadas · clic en una fila para ver el detalle`;
-    const th = COLS_R.filter(c => st.base || !c.b).map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t || c.tf ? ` title="${esc(c.tf ? c.tf(RES.p) : c.t)}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
+    const th = COLS_R.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t || c.tf ? ` title="${esc(c.tf ? c.tf(RES.p) : c.t)}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const rows = xs.map(x => `<tr class="row${x.cod === st.target ? ' sel' : ''}" data-cod="${x.cod}">
-      <td class="l cp-uni"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag">${esc(x.seg)}${x.aso ? ' · asociativa' : ''}</span></td>
+      <td class="l cp-uni"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag">${esc(x.seg)}${x.aso ? ' · asociativa' : ''}${x.grupo ? ' · ' + esc(x.grupo.n) : ''}</span></td>
       <td class="l cp-reg" title="${esc(x.regs.map(([d, v]) => `${d}: ${fmt(v)} alumnos`).join('\n'))}">${x.regs.length ? lista(x.regs, 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
       <td class="l cp-seg" title="${esc(x.segs.map(([sg, v]) => `${sg}: ${fmt(v)} alumnos`).join('\n'))}">${NIVELES.filter(nv => x.segs.some(([sg]) => sg.startsWith(nv))).map(nv => `<span class="cp-sg">${NIV_C[nv]}</span>`).join('')}</td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
-      ${st.base ? [0, 1, 2, 3, 4].map(z => `<td class="cp-zb">${x.zc[z] ? `<span class="cp-n" title="${esc('Z' + z + ': ' + tipZ(z, RES.p))}">${x.zc[z]}</span>` : '<span class="nd">·</span>'}</td>`).join('') : ''}
       ${[0, 1, 2, 3, 4, 5].map(c => { const v = c ? x.cc[c] : x.zc[0]; return `<td>${v ? `<span class="cc c${c} cp-n" title="${esc(CATS[c] + ': ' + tipC(c, RES.p))}">${v}</span>` : '<span class="nd">·</span>'}</td>`; }).join('')}
+      <td>${celFut(x)}</td>
       <td class="l">${barra(x.cc, x.nTr)}</td>
       <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
@@ -454,7 +484,7 @@
       st.target = tr.dataset.cod; st.abierto = null; $('cp-target').value = st.target; pintarRes(); pintarDet();
       $('cp-det-card').scrollIntoView({behavior: 'smooth', block: 'start'});
     });
-    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ponderada (zona × castigos por nivel y modalidad); Nulo = sin traslape. Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
+    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ' + (st.sinCast ? '<b>sin castigos</b> (solo zona)' : 'ponderada (zona × castigos por nivel y modalidad)') + '; Nulo = sin traslape. ⚠ = traslapes futuros donde Laureate tendrá presencia. Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
       '<span style="margin-left:auto">' + CATS.map((c, i) => `<i class="c${i}"></i>${c}`).join(' ') + '</span>';
     // selector de universidad
     const opts = RES.res.slice().sort((a, b) => a.s.localeCompare(b.s, 'es'));
@@ -483,24 +513,26 @@
     const geos = [...new Set(todas.map(f => geoN(f.m.geo)))].sort((a, b) => (b === 'Nacional') - (a === 'Nacional') || a.localeCompare(b, 'es'));
     if (!geos.includes(st.fGeo)) st.fGeo = '';
     $('cp-fg').innerHTML = '<option value="">Todos</option>' + geos.map(g => `<option${g === st.fGeo ? ' selected' : ''}>${esc(g)}</option>`).join('');
-    let fs = todas.filter(f => (st.fZona === 'todos' || (st.fZona === 'tras' ? f.tras : f.z >= 2)) &&
+    let fs = todas.filter(f => (st.fZona === 'todos' || (st.fZona === 'tras' ? f.tras : st.fZona === 'fut' ? f.fut : f.z >= 2)) &&
       (!st.fNivel || f.m.niv === st.fNivel) && (!st.fMod || f.m.mod === st.fMod) && (!st.fGeo || geoN(f.m.geo) === st.fGeo));
     const {k, d} = st.sortD;
     fs.sort((a, b) => { const va = valD(a, k), vb = valD(b, k); return (va < vb ? -d : va > vb ? d : 0) || b.pond - a.pond || b.m.tot - a.m.tot; });
+    const fu = x.futr;
     const kk = (t, v, dd) => `<div class="kpi"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${dd}</div></div>`;
     $('cp-det-kpis').innerHTML =
       kk(esc(x.s), chipC(x.cat), `${esc(x.nom)} · promedio pond. ${x.ind == null ? '–' : f2(x.ind)} · ${x.ge4} mercados Alto o Muy alto (ponderado)`) +
       kk('Mercados con traslape', `${x.nTr} <small>/ ${x.nMk}</small>`, `${x.al ? Math.round(100 * x.alT / x.al) : 0}% de sus ${fmt(x.al)} alumnos`) +
       kk('Por zona', [1, 2, 3, 4].map(z => chipZ(z, x.zc[z])).join(' '), 'Z1 · Z2 · Z3 · Z4') +
       kk('Fuera de zona segura', fmt(x.alZ2), 'alumnos de la universidad en Z2–Z4') +
-      kk('Pregunta 14', x.q14, `mercados con s A+B ≥ ${RES.p.q14}%`);
+      kk('Pregunta 14', x.q14, `mercados con s A+B ≥ ${RES.p.q14}%`) +
+      kk('Traslape futuro', fu.n ? `⚠ ${fu.nP} <small>/ ${fu.n}</small>` : '0', fu.n ? `mercados en ${esc(fu.geos.join(', '))} · ${fmt(fu.alP)} alumnos con la misma carrera que el comprador` : `sin mercados en ${esc(futTxt())}`);
     const th = COLS_D.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t ? ` title="${c.t}"` : ''} style="cursor:pointer">${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const MAXF = 400;
     const rows = fs.slice(0, MAXF).map((f, i) => {
       const id = f.m.niv + '|' + f.m.r3 + '|' + f.m.mi + '|' + f.m.geo;
       const open = st.abierto === id;
       let html = `<tr class="row${open ? ' sel' : ''}${f.tras ? '' : ' fuera'}" data-id="${esc(id)}">
-        <td class="l">${f.m.niv}</td><td class="l cp-fam" title="${esc(f.m.r3)}">${esc(f.m.r3)}</td><td class="l">${f.m.mod}</td><td class="l">${esc(geoN(f.m.geo))}</td>
+        <td class="l">${f.m.niv}</td><td class="l cp-fam" title="${esc(f.m.r3)}">${esc(f.m.r3)}</td><td class="l">${f.m.mod}</td><td class="l">${esc(geoN(f.m.geo))}${f.fut ? ` <span class="cp-fut-b${f.futP ? '' : ' off'}" title="${esc(f.futP ? 'Laureate tendrá presencia aquí y ya ofrece esta carrera en otra provincia' : 'Laureate tendrá presencia aquí; hoy no ofrece esta carrera')}">futuro</span>` : ''}</td>
         <td>${fmt(f.m.tot)}</td><td>${f.m.f.size}</td><td>${fmt(f.m.A)}</td><td>${fmt(f.B)}</td>
         <td>${pc(f.m.sA)}</td><td>${pc(f.sB)}</td><td${f.q14 ? ' class="cp-q14" title="Pregunta 14"' : ''}>${pc(f.sJ)}</td>
         <td>${fmt(f.m.hhi)}</td><td>${f.tras ? fmt(f.d) : '–'}</td><td>${f.tras ? fmt(f.post) : '–'}</td>
@@ -519,14 +551,21 @@
 
   function participantes(f, x) {
     const m = f.m;
-    const xs = [...m.f].map(([firm, v]) => ({firm, v, s: 100 * v / m.tot})).sort((a, b) => b.v - a.v);
+    const xs = [...m.ag].map(([firm, v]) => ({firm, v, s: 100 * v / m.tot})).sort((a, b) => b.v - a.v);
     const MAX = 12, top = xs.slice(0, MAX), resto = xs.slice(MAX);
-    const nombre = firm => firm === 'A' ? 'Comprador (Laureate + UCAL)' : RAW.sig(firm);
-    const rows = top.map(p => `<tr class="${p.firm === 'A' ? 'cpA' : p.firm === x.cod ? 'cpB' : ''}">
+    const gr = GRUPOS.find(g => g.id === (f.g && f.g.id));
+    const nombre = firm => {
+      if (firm === 'A') return 'Comprador (Laureate + UCAL)';
+      const g = GRUPOS.find(g => g.id === firm);
+      if (!g) return RAW.sig(firm);
+      return g.n + ' (' + g.cods.filter(c => m.f.has(c)).map(c => RAW.sig(c) + ' ' + fmt(m.f.get(c))).join(', ') + ')';
+    };
+    const rows = top.map(p => `<tr class="${p.firm === 'A' ? 'cpA' : p.firm === x.cod || (gr && p.firm === gr.id) ? 'cpB' : ''}">
       <td class="l">${esc(nombre(p.firm))}</td><td>${fmt(p.v)}</td><td>${pc(p.s)}</td><td>${fmt(p.s * p.s)}</td>
       <td class="l"><span class="cp-sh"><b style="width:${Math.min(100, p.s)}%"></b></span></td></tr>`).join('');
     const r = resto.length ? `<tr><td class="l nd">${resto.length} universidades más</td><td>${fmt(resto.reduce((s, p) => s + p.v, 0))}</td><td>${pc(resto.reduce((s, p) => s + p.s, 0))}</td><td>${fmt(resto.reduce((s, p) => s + p.s * p.s, 0))}</td><td></td></tr>` : '';
-    const post = f.tras ? `<tr class="cpA"><td class="l">Comprador + ${esc(x.s)} (post)</td><td>${fmt(m.A + f.B)}</td><td>${pc(f.sJ)}</td><td>${fmt(f.sJ * f.sJ)}</td><td></td></tr>` : '';
+    const resG = gr && f.sG > f.sB ? `<tr><td class="l">Resto de ${esc(gr.n)} (post)</td><td>${fmt(m.ag.get(gr.id) - f.B)}</td><td>${pc(f.sG - f.sB)}</td><td>${fmt((f.sG - f.sB) ** 2)}</td><td></td></tr>` : '';
+    const post = f.tras ? `<tr class="cpA"><td class="l">Comprador + ${esc(x.s)} (post)</td><td>${fmt(m.A + f.B)}</td><td>${pc(f.sJ)}</td><td>${fmt(f.sJ * f.sJ)}</td><td></td></tr>${resG}` : '';
     return `<table class="cp-part"><tr><th class="l">Participante</th><th>Alumnos</th><th>Participación</th><th>s²</th><th></th></tr>${rows}${r}${post}</table>`;
   }
 
