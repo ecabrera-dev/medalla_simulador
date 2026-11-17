@@ -81,3 +81,23 @@ details.cp-riesgo[open]>summary{margin-bottom:14px}
 .cp-zl .cz{flex:none;margin-top:1px}
 .cp-zl b{display:block;font-weight:600;color:var(--ink)}
 .cp-zl small{display:block;font-size:11px;color:var(--muted);line-height:1.4;margin-top:1px}
+/* botón fijo: volver al escenario base */
+.cp-base-btn{position:fixed;right:22px;bottom:22px;z-index:50;box-shadow:0 4px 14px rgba(16,24,40,.22)}
+/* columnas fijas al desplazarse a la derecha */
+.tbl.cp th.stk,.tbl.cp td.stk{position:sticky;left:0;z-index:1;background:var(--card)}
+.tbl.cp th.stk{z-index:3}
+.tbl.cp tr.row:hover td.stk{background:#FAFBFC}
+.tbl.cp tr.sel td.stk{background:var(--navy-soft)}
+.tbl.cp tr.fuera td.stk{opacity:1;color:#B8BFC8}
+.tbl.cp .stk1{min-width:78px;max-width:78px;box-sizing:border-box}
+.tbl.cp .stk2{left:78px;box-shadow:inset -1px 0 0 var(--line)}
+.tbl.cp td.cp-uni.stk{box-shadow:inset -1px 0 0 var(--line)}
+/* mismo segmento de valor que el comprador */
+.tag.cp-mseg{background:#FFF4DE;border-color:#F3C979;color:#8A5A00;cursor:help}
+.cp-mseg-t{color:#8A5A00}
+/* peso con castigo de tamaño o líder post */
+.tbl.cp td.cp-wx{color:#B4441B;font-weight:600;cursor:help}
+/* participaciones ex post */
+.cp-part th.cp-xp,.cp-part td.cp-xp{background:#F4F7FB}
+.cp-part tr.cp-tot td{border-top:1px solid var(--line);font-weight:600;color:var(--ink)}
+#cp-det-kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
