@@ -33,7 +33,7 @@
   let RAW = null, RES = null;
   const st = {per: null, lima: 'sl', univ: 'all', mod: 'sep', alcance: 'todo', aso: 'si', sinCast: false,
     sortR: {k: 'cat', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
-    fZona: 'tras', fNivel: '', fMod: '', fGeo: '', abierto: null};
+    fZona: 'todos', fNivel: '', fMod: '', fGeo: '', abierto: null};
 
   const $ = id => document.getElementById(id);
   const esc = s => String(s ?? '').replace(/[&<>"]/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;'}[c]));
@@ -335,7 +335,7 @@
       <div class="controls" style="margin-bottom:14px">
         <div class="field"><span>Universidad</span><select id="cp-target"></select></div>
         <div class="field"><span>Mercados</span><select id="cp-fz">
-          <option value="tras">Con traslape</option><option value="z2">Fuera de zona segura (Z2–Z4)</option><option value="fut">Traslape futuro (presencia futura de Laureate)</option><option value="todos">Todos donde está la universidad</option></select></div>
+          <option value="tras">Con traslape</option><option value="z2">Fuera de zona segura (Z2–Z4)</option><option value="fut">Traslape futuro (presencia futura de Laureate)</option><option value="todos" selected>Todos donde está la universidad</option></select></div>
         <div class="field"><span>Nivel</span><select id="cp-fn"><option value="">Todos</option>${NIVELES.map(n => `<option>${n}</option>`).join('')}</select></div>
         <div class="field"><span>Modalidad</span><select id="cp-fm"></select></div>
         <div class="field"><span>Ámbito</span><select id="cp-fg"></select></div>
@@ -529,7 +529,7 @@
       kk('Pregunta 14', x.q14, `mercados con s A+B ≥ ${RES.p.q14}%`) +
       kk('Traslape futuro', fu.n ? `⚠ ${fu.nP} <small>/ ${fu.n}</small>` : '0', fu.n ? `mercados en ${esc(fu.geos.join(', '))} · ${fmt(fu.alP)} alumnos con la misma carrera que el comprador` : `sin mercados en ${esc(futTxt())}`);
     const th = COLS_D.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t ? ` title="${c.t}"` : ''} style="cursor:pointer">${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
-    const MAXF = 400;
+    const MAXF = 1000;
     const rows = fs.slice(0, MAXF).map((f, i) => {
       const id = f.m.niv + '|' + f.m.r3 + '|' + f.m.mi + '|' + f.m.geo;
       const open = st.abierto === id;
