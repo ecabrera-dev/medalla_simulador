@@ -187,8 +187,8 @@
     const i = (a.length - 1) * Math.min(100, Math.max(0, q)) / 100, lo = Math.floor(i);
     return a[lo] + (a[Math.min(lo + 1, a.length - 1)] - a[lo]) * (i - lo);
   }
-  // segmentos de valor del comprador: [[segmento, sigla], ...]
-  const SEG_A = () => [...RAW.compra].map(c => [(BD.unis.get(c) || {}).seg, RAW.sig(c)]).filter(([sg]) => sg && sg !== 'Pública');
+  // segmentos de valor del comprador (solo Laureate: UPC y UPN; UCAL no cuenta): [[segmento, sigla], ...]
+  const SEG_A = () => [...RAW.compra].filter(c => c !== UCAL.cod).map(c => [(BD.unis.get(c) || {}).seg, RAW.sig(c)]).filter(([sg]) => sg && sg !== 'Pública');
   const periodosSel = () => st.per === 'prom' ? RAW.periodos.slice(-N_PROM) : [st.per];
 
   function calcular() {
