@@ -416,18 +416,17 @@
 
   const COLS_R = [
     {k: 's', n: 'Universidad', l: true},
-    {k: 'reg', n: 'Regiones', l: true, t: 'Departamentos donde tiene alumnos en el alcance elegido (ordena por cantidad)'},
+    {k: 'reg', n: 'Regiones', l: true, tf: () => 'Departamentos donde tiene alumnos en el alcance elegido (ordena por cantidad). ⚠ = traslape futuro: ' + tipFut()},
     {k: 'seg', n: 'Niveles', l: true, ns: true, t: 'Niveles donde tiene alumnos (pasa el cursor para ver nivel × modalidad)'},
     {k: 'al', n: 'Alumnos'},
     {k: 'nMk', n: 'Mercados', t: 'Mercados relevantes en los que está la universidad'},
     {k: 'nTr', n: 'Con traslape', t: 'Mercados donde también está el comprador'},
     ...[0, 1, 2, 3, 4, 5].map(i => ({k: 'c' + i, n: CATS[i], tf: p => tipC(i, p)})),
-    {k: 'fut', n: 'Traslape futuro', tf: () => tipFut()},
     {k: 'dist', n: 'Resumen', l: true, ns: true, t: 'Mercados con traslape por categoría ponderada'},
     {k: 'ind', n: 'Promedio pond.', t: 'Promedio de los puntajes ponderados de los mercados con traslape (referencial)'},
     {k: 'cat', n: 'Categoría', t: 'Por cantidad de mercados en cada zona (ver Parámetros de riesgo)'},
   ];
-  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k === 'fut' ? x.futr.nP * 1e3 + x.futr.n : k === 'c0' ? x.zc[0] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
+  const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k === 'c0' ? x.zc[0] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
   // explicación breve de cada zona y categoría (con los parámetros vigentes)
   const n0 = v => v.toLocaleString('en-US');
   function tipZ(z, p) {
@@ -466,11 +465,10 @@
     const th = COLS_R.map(c => `<th class="${c.l ? 'l' : ''}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t || c.tf ? ` title="${esc(c.tf ? c.tf(RES.p) : c.t)}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const rows = xs.map(x => `<tr class="row${x.cod === st.target ? ' sel' : ''}" data-cod="${x.cod}">
       <td class="l cp-uni"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag">${esc(x.seg)}${x.aso ? ' · asociativa' : ''}${x.grupo ? ' · ' + esc(x.grupo.n) : ''}</span></td>
-      <td class="l cp-reg" title="${esc(x.regs.map(([d, v]) => `${d}: ${fmt(v)} alumnos`).join('\n'))}">${x.regs.length ? lista(x.regs, 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
+      <td class="l cp-reg" title="${esc(x.regs.map(([d, v]) => `${d}: ${fmt(v)} alumnos`).join('\n'))}">${x.futr.n ? celFut(x) + ' ' : ''}${x.regs.length ? lista(x.regs, 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
       <td class="l cp-seg" title="${esc(x.segs.map(([sg, v]) => `${sg}: ${fmt(v)} alumnos`).join('\n'))}">${NIVELES.filter(nv => x.segs.some(([sg]) => sg.startsWith(nv))).map(nv => `<span class="cp-sg">${NIV_C[nv]}</span>`).join('')}</td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
       ${[0, 1, 2, 3, 4, 5].map(c => { const v = c ? x.cc[c] : x.zc[0]; return `<td>${v ? `<span class="cc c${c} cp-n" title="${esc(CATS[c] + ': ' + tipC(c, RES.p))}">${v}</span>` : '<span class="nd">·</span>'}</td>`; }).join('')}
-      <td>${celFut(x)}</td>
       <td class="l">${barra(x.cc, x.nTr)}</td>
       <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
@@ -484,7 +482,7 @@
       st.target = tr.dataset.cod; st.abierto = null; $('cp-target').value = st.target; pintarRes(); pintarDet();
       $('cp-det-card').scrollIntoView({behavior: 'smooth', block: 'start'});
     });
-    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ' + (st.sinCast ? '<b>sin castigos</b> (solo zona)' : 'ponderada (zona × castigos por nivel y modalidad)') + '; Nulo = sin traslape. ⚠ = traslapes futuros donde Laureate tendrá presencia. Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
+    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ' + (st.sinCast ? '<b>sin castigos</b> (solo zona)' : 'ponderada (zona × castigos por nivel y modalidad)') + '; Nulo = sin traslape. ⚠ en Regiones = traslapes futuros donde Laureate tendrá presencia (' + esc(futTxt()) + '). Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
       '<span style="margin-left:auto">' + CATS.map((c, i) => `<i class="c${i}"></i>${c}`).join(' ') + '</span>';
     // selector de universidad
     const opts = RES.res.slice().sort((a, b) => a.s.localeCompare(b.s, 'es'));
