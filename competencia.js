@@ -21,11 +21,11 @@
   const N_PROM = 6;   // «Promedio de los últimos seis ciclos»
   const CATS = ['Nulo', 'Muy bajo', 'Bajo', 'Moderado', 'Alto', 'Muy alto'];
   const ZONAS = [
-    {c: 'Z0', n: 'Sin traslape'},
-    {c: 'Z1', n: 'Menor probabilidad de riesgo'},
-    {c: 'Z2', n: 'IHH 1,500–2,500 y Δ ≥ 200'},
-    {c: 'Z3', n: 'IHH > 2,500 y Δ moderado'},
-    {c: 'Z4', n: 'IHH > 2,500 y Δ alto'},
+    {c: 'Z0', n: 'Sin traslapes'},
+    {c: 'Z1', n: 'Zonas de descarte de riesgos del Indecopi'},
+    {c: 'Z2', n: 'ΔIHH por encima del umbral en zona de concentración moderada'},
+    {c: 'Z3', n: 'ΔIHH por encima del umbral en zona de alta concentración'},
+    {c: 'Z4', n: 'ΔIHH muy alto en zona de alta concentración'},
   ];
   const NIVELES = ['Pregrado', 'Maestría', 'Doctorado'];
   const LIMA_LC = 'Lima Metropolitana y Callao';
@@ -282,6 +282,7 @@
   // ------------------------------------------------------------------ interfaz
   const segBtns = (id, ops, v) => `<div class="seg" id="${id}">${ops.map(([k, n]) => `<button data-v="${k}"${k === v ? ' class="on"' : ''}>${n}</button>`).join('')}</div>`;
   const inp = (k, lbl, step) => `<label>${lbl} <input type="number" id="cp-${k}" value="${DEF[k]}" step="${step}"></label>`;
+  const zLbl = z => `<span class="cp-zl">${chipZ(z)}<span><b>${ZONAS[z].n}</b><small id="cp-zd${z}"></small></span></span>`;
   const chipZ = (z, n) => `<span class="cz z${z}" title="${ZONAS[z].c} · ${ZONAS[z].n}">${n == null ? ZONAS[z].c : n}</span>`;
   const chipC = c => c == null ? '<span class="cc">–</span>' : `<span class="cc c${c}">${CATS[c]}</span>`;
 
@@ -308,8 +309,8 @@
           ${inp('d1', 'Δ máx. zona 1,500–2,500', 10)}${inp('d2', 'Δ máx. zona > 2,500', 10)}
           ${inp('dAlto', 'Δ «alto» (separa Z3 de Z4)', 10)}${inp('q14', 'Pregunta 14: s A+B ≥ (%)', 1)}</div>
         <div class="cp-grp"><h3>Puntaje por zona <small>0–5</small></h3>
-          <label>${chipZ(0)} Sin traslape <input type="number" value="0" disabled></label>
-          ${[1, 2, 3, 4].map(z => inp('z' + z, `${chipZ(z)} ${ZONAS[z].n}`, 1)).join('')}</div>
+          <label>${zLbl(0)} <input type="number" value="0" disabled></label>
+          ${[1, 2, 3, 4].map(z => inp('z' + z, zLbl(z), 1)).join('')}</div>
         <div class="cp-grp"><h3>Ponderadores <small>castigo por nivel y modalidad</small></h3>
           ${inp('wPre', 'Pregrado', 0.05)}${inp('wMae', 'Maestría', 0.05)}${inp('wDoc', 'Doctorado', 0.05)}
           ${inp('wPres', 'Presencial', 0.05)}${inp('wSemi', 'Semipresencial', 0.05)}${inp('wVirt', 'Virtual (nacional)', 0.05)}</div>
@@ -389,6 +390,7 @@
     $('cp-fm').innerHTML = '<option value="">Todas</option>' + mods.map(m => `<option${m === st.fMod ? ' selected' : ''}>${m}</option>`).join('');
     if (st.alcance === 'pre' && st.fNivel && st.fNivel !== 'Pregrado') { st.fNivel = ''; $('cp-fn').value = ''; }
     const n = RES.p.nConf; $('cp-n1').textContent = n; $('cp-n2').textContent = Math.max(1, n - 1);
+    for (let z = 0; z <= 4; z++) $('cp-zd' + z).textContent = zDet(z, RES.p);
     pintarFuente(); pintarKpis(); pintarRes(); pintarDet();
   }
 
@@ -429,13 +431,15 @@
   const valR = (x, k) => k === 's' ? x.s.toLowerCase() : k === 'c0' ? x.zc[0] : k[0] === 'c' && k.length === 2 ? x.cc[+k[1]] : k === 'reg' ? x.regs.length : k === 'cat' ? x.rk : x[k];
   // explicación breve de cada zona y categoría (con los parámetros vigentes)
   const n0 = v => v.toLocaleString('en-US');
-  function tipZ(z, p) {
-    return ['Sin traslape: el comprador o la universidad no tiene alumnos en el mercado.',
-      `IHH post < ${n0(p.t1)}; o ${n0(p.t1)}–${n0(p.t2)} con ΔIHH < ${p.d1}; o > ${n0(p.t2)} con ΔIHH < ${p.d2}.`,
-      `IHH post entre ${n0(p.t1)} y ${n0(p.t2)} con ΔIHH ≥ ${p.d1}.`,
+  // detalle de rangos de IHH post y ΔIHH de cada zona
+  function zDet(z, p) {
+    return ['El comprador o la universidad no tiene alumnos en el mercado.',
+      `IHH post < ${n0(p.t1)} (cualquier ΔIHH); IHH post ${n0(p.t1)}–${n0(p.t2)} con ΔIHH < ${p.d1}; IHH post > ${n0(p.t2)} con ΔIHH < ${p.d2}.`,
+      `IHH post ${n0(p.t1)}–${n0(p.t2)} con ΔIHH ≥ ${p.d1}.`,
       `IHH post > ${n0(p.t2)} con ${p.d2} ≤ ΔIHH < ${p.dAlto}.`,
-      `IHH post > ${n0(p.t2)} con ΔIHH ≥ ${p.dAlto}.`][z] + ' Sin castigos por nivel ni modalidad.';
+      `IHH post > ${n0(p.t2)} con ΔIHH ≥ ${p.dAlto}.`][z];
   }
+  const tipZ = (z, p) => ZONAS[z].n + ': ' + zDet(z, p);
   function tipC(c, p) {
     if (c === 0) return 'Sin traslape (Z0): puntaje 0.';
     return `Puntaje ponderado = puntaje de la zona × peso del nivel × peso de la modalidad, mayor que ${c - 1} y hasta ${c}.`;
