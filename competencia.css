@@ -101,3 +101,12 @@ details.cp-riesgo[open]>summary{margin-bottom:14px}
 .cp-part th.cp-xp,.cp-part td.cp-xp{background:#F4F7FB}
 .cp-part tr.cp-tot td{border-top:1px solid var(--line);font-weight:600;color:var(--ink)}
 #cp-det-kpis{grid-template-columns:repeat(auto-fit,minmax(160px,1fr))}
+/* universidades sin actividad (al final de la lista) */
+.tbl.cp tr.cp-sep td{background:var(--na);color:var(--muted);font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;padding:6px 10px}
+.tbl.cp tr.cp-inact td{color:#A8B0BA;background:#FCFCFD}
+.tbl.cp tr.cp-inact .name{color:#8C95A1}
+.tbl.cp tr.cp-inact td.cp-motivo{white-space:normal;font-size:12px;text-align:left}
+.tbl.cp tr.cp-inact td.cp-motivo b{color:#B4441B;font-weight:600}
+/* comparación de compradores */
+#cp-cmp .tbl td{vertical-align:middle}
+#cp-cmp td.cp-top .cc{margin:1px 2px 1px 0}
