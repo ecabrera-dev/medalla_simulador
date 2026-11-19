@@ -35,7 +35,11 @@ Requiere internet para la librería de lectura de Excel (SheetJS desde cdnjs).
 |---|---|---|
 | `Base_Tuni` | alumnos de pregrado por universidad, provincia, carrera y modalidad, por periodo | Código INEI, Nombre Entidad, Tipo_gestiòn, Periodo Estandarizado, Grado, Macro Familia Sunedu, Familia Sunedu, DEPARTAMENTO_LOCAL, PROVINCIA_AJUSTADA, N_MATRICULADOS, Info_real; las columnas después de «Modalidades separadas >>>» (Semipresencial, Presencial) y de «Final >>>» (Presencial (+semi), A distancia) |
 | `Base_Financieros` | ingresos, utilidad operativa, resultado neto y EBITDA por universidad y año (S/ millones) | Código INEI, Año, Ingresos operativos totales, Utilidad operativa, Resultado neto, EBITDA, EBITDA estimado |
-| `Base_Universidades` | sigla, tipo de entidad, licencia, grupo comprador y segmento | Código INEI, Sigla, Tipo_entidad, Licencia, Grupo, Segmento |
+| `Base_Universidades` | sigla, tipo de entidad, licencia, grupo comprador, segmento y ranking Sunedu | Código INEI, Sigla, Tipo_entidad, Licencia, Grupo, Segmento; opcionales: Ranking Sunedu general, Ranking Sunedu privadas |
+
+**Segmentos** (columna Segmento, 2026-11-19): Top+, Top-, Middle, Value, Price, Resto de privadas y Pública. Top+, Top- y Middle siguen el Segundo Avance (UPC en Top-, UCAL en Middle). Value y Price se separan por la pensión mensual mínima de la web (Price si es menor a S/ 550; la promedio si no hay mínima); UPN es Value. «Resto de privadas» = privadas sin pensión levantada. **Grupo** = Laureate para UPC, UPN y UCAL.
+
+**Ranking Sunedu** (Informe Bienal sobre la Realidad Universitaria 2017, Anexo F, producción científica al 2016): «general» es el puesto del informe (1 a 32; el resto empata en 33); «privadas» renumera solo las privadas (1 a 19; las empatadas comparten el 20). Vacío si no figura.
 
 Las hojas `Laureate`, `Clasificación Sunedu` y `Base_univ` alimentan las fórmulas de `Base_Tuni`; el simulador no las lee directamente.
 
@@ -58,7 +62,7 @@ Conviene correrlo antes de hacer commit (tarda unos 20 segundos; necesita `pip i
 python scripts/validar_excel.py
 ```
 
-**Errores** (hay que corregirlos): faltan hojas o columnas que lee el simulador; el Excel se guardó sin los valores de las fórmulas; códigos INEI vacíos o repetidos; universidad-año repetido en Base_Financieros; códigos que no existen en Base_Tuni; alumnos negativos o con texto; texto en columnas de financieros; año inválido; Segmento, Grupo, Tipo_entidad o EBITDA estimado fuera de lista; ninguna universidad con Grupo = Laureate.
+**Errores** (hay que corregirlos): faltan hojas o columnas que lee el simulador; el Excel se guardó sin los valores de las fórmulas; códigos INEI vacíos o repetidos; universidad-año repetido en Base_Financieros; códigos que no existen en Base_Tuni; alumnos negativos o con texto; texto en columnas de financieros; año inválido; ranking que no es un entero positivo; Segmento, Grupo, Tipo_entidad o EBITDA estimado fuera de lista; ninguna universidad con Grupo = Laureate.
 
 **Avisos** (no bloquean): privadas con alumnos sin fila en Base_Universidades o sin financieros; suma por modalidad que se aleja más de 0.5% de N_MATRICULADOS; EBITDA mayor que los ingresos o ingresos que parecen estar en S/ miles.
 

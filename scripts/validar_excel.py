@@ -41,7 +41,8 @@ COLS_FIN = {"cod": "Código INEI", "nom": "Nombre Entidad", "a": "Año", "ens": 
             "eb": "EBITDA", "est": "EBITDA estimado"}
 COLS_UNI = {"cod": "Código INEI", "nom": "Nombre Entidad", "s": "Sigla", "ges": "Tipo_gestión",
             "tipo": "Tipo_entidad", "lic": "Licencia", "g": "Grupo", "seg": "Segmento"}
-SEGMENTOS = {"Top", "Value", "Middle", "Resto de privadas", "Pública"}
+SEGMENTOS = {"Top+", "Top-", "Middle", "Value", "Price", "Resto de privadas", "Pública"}
+COLS_RANK = {"rg": "Ranking Sunedu general", "rp": "Ranking Sunedu privadas"}   # opcionales: si están, enteros >= 1
 TIPOS = {"Universidad", "Escuela Superior", "Instituto", "Otra"}
 SIN_FAM = {None, "", "No se encuentra"}
 TOL_MODALIDAD = 0.005          # aviso si la suma por modalidad se aleja más de 0.5% de N_MATRICULADOS
@@ -172,9 +173,16 @@ def validar(path: Path, csv_dir: Path | None) -> Informe:
     unis = {}
     if h is not None:
         c = columnas(h, H, COLS_UNI, inf)
+        cr = {k: h.index(nrm(n)) for k, n in COLS_RANK.items() if nrm(n) in h}
         if None not in c.values():
             vistos = Counter()
             for fila, r in datos_u:
+                for k, i in cr.items():
+                    v = r[i]
+                    if v not in (None, "") and (not es_num(v) or v < 1 or v != int(v)):
+                        inf.error(H, f"fila {fila}: {COLS_RANK[k]} «{v}» debe ser un entero mayor o igual a 1, o vacío")
+                if "rp" in cr and r[cr["rp"]] not in (None, "") and r[c["ges"]] != "Privado":
+                    inf.aviso(H, f"fila {fila}: universidad pública con Ranking Sunedu privadas")
                 cod = r[c["cod"]]
                 if cod in (None, ""):
                     inf.error(H, f"fila {fila}: Código INEI vacío")

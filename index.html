@@ -166,9 +166,11 @@
         <select id="pool">
           <option value="todas">Todas las privadas</option>
           <option value="sinriesgo">Sin riesgo</option>
-          <option value="top">Solo top</option>
-          <option value="value">Solo value</option>
-          <option value="middle">Solo middle</option>
+          <option value="topmas">Solo Top+</option>
+          <option value="topmenos">Solo Top-</option>
+          <option value="middle">Solo Middle</option>
+          <option value="value">Solo Value</option>
+          <option value="price">Solo Price</option>
           <option value="pequenas">Solo pequeñas</option>
           <option value="regionales">Solo regionales</option>
         </select>
@@ -251,14 +253,15 @@
         <li><b>Fuente única:</b> todo sale del Excel «Olimpico Clasificaciones.xlsx» (carpeta <code>data/</code>). Alumnos, carrera y modalidad: hoja Base_Tuni. Financieros: hoja Base_Financieros. Sigla, grupo, segmento y tipo de entidad: hoja Base_Universidades. Si se edita el Excel (en Excel, para que se guarden los valores de las fórmulas) y se recarga la página, el simulador cambia.</li>
         <li>Mercado relevante (Indecopi): pregrado en universidades (tipo de entidad «Universidad» en Base_Universidades), por provincia (PROVINCIA_AJUSTADA; Lima y Callao forman Lima Metropolitana), rama de carrera (Familia Sunedu, nivel 3) y modalidad. Como alternativa, la rama general (Macro Familia Sunedu, nivel 1): ahí lo presencial se mide por provincia y lo semipresencial y a distancia como mercados nacionales, uno por modalidad.</li>
         <li>Modalidad: columnas finales de Base_Tuni. Con tres modalidades se usan «Modalidades separadas» (presencial y semipresencial) y «A distancia»; con dos, «Presencial (+semi)» y «A distancia». Fuera de las universidades con información real (Info_real = 1), la modalidad es una estimación del Excel: proporciones del IV Informe bienal de Sunedu por familia de carreras, limitadas a las modalidades que ofrece cada programa.</li>
-        <li>Riesgo: lineamientos de Indecopi. Sin riesgo si el HHI post es menor a 1,500; entre 1,500 y 2,500 con Δ menor a 200; o mayor a 2,500 con Δ menor a 100. El HHI inicial ya agrupa UPC y UPN (Grupo = Laureate en Base_Universidades).</li>
+        <li>Riesgo: lineamientos de Indecopi. Sin riesgo si el HHI post es menor a 1,500; entre 1,500 y 2,500 con Δ menor a 200; o mayor a 2,500 con Δ menor a 100. El HHI inicial ya agrupa a Laureate: UPC, UPN y UCAL (Grupo = Laureate en Base_Universidades).</li>
         <li>Riesgo alto: participación post mayor a 50% o Δ de al menos el doble del umbral.</li>
         <li>Factible: alumnos de la universidad en celdas sin riesgo. Ingresos y EBITDA factibles se prorratean por ese porcentaje.</li>
         <li>Financieros en S/ millones. «Último disponible» toma, por partida, el año más reciente con dato; el año se indica cuando no es el último de la hoja. Ingresos y utilidad operativa: datasae y, si falta, EEFF; resultado neto y EBITDA: EEFF de los portales de transparencia.</li>
         <li>EBITDA estimado (marcado «e», en cursiva): «EBITDA estimado = Sí» en Base_Financieros. Para las universidades que no publican D&A es utilidad operativa + 5.3% de los ingresos del mismo año (mediana de D&A / ingresos de las que sí la publican).</li>
         <li>El optimizador elige una universidad a la vez, la de mayor valor factible dado lo ya comprado, dentro de las candidatas elegidas. «Sin riesgo» solo acepta universidades que no generan celdas con riesgo.</li>
-        <li>Segmento: Top, Value, Middle y Resto de privadas (Base_Universidades). Regionales: sin alumnos en Lima Metropolitana. Pequeñas: hasta el umbral de alumnos de pregrado (5,000 por defecto, editable en «Umbrales»).</li>
-        <li>Paquetes de compra: cada fila corre el optimizador desde cero (solo UPC y UPN como base) con las candidatas de ese grupo, el criterio, la restricción y el mercado elegidos arriba. «Usar» lo carga como escenario.</li>
+        <li>Segmento: Top+, Top-, Middle, Value, Price y Resto de privadas (columna Segmento de Base_Universidades). Top+, Top- y Middle siguen el Segundo Avance; Value y Price se separan por pensión (Price = pensión mensual mínima menor a S/ 550); Resto = privadas sin pensión levantada. Regionales: sin alumnos en Lima Metropolitana. Pequeñas: hasta el umbral de alumnos de pregrado (5,000 por defecto, editable en «Umbrales»).</li>
+        <li>Rk. priv.: puesto en el ranking general de universidades de Sunedu (Informe Bienal 2017, Anexo F, producción científica al 2016) contando solo las privadas. Del 1 al 19 hay puesto propio; el resto empata en 20 (33 en el ranking general). «–»: no figura en el ranking. El ranking general está en el tooltip y en Base_Universidades.</li>
+        <li>Paquetes de compra: cada fila corre el optimizador desde cero (solo Laureate como base) con las candidatas de ese grupo, el criterio, la restricción y el mercado elegidos arriba. «Usar» lo carga como escenario.</li>
       </ul>
     </details>
   </section>
@@ -358,9 +361,11 @@ function candidatas() { return U.filter(u => u.priv && !LAUR.has(u.i)).map(u => 
 const POOLS = {
   todas: {n: 'Todas las privadas', f: () => true},
   sinriesgo: {n: 'Sin riesgo', f: () => true, estricta: true},
-  top: {n: 'Top', f: u => U[u].seg === 'Top'},
-  value: {n: 'Value', f: u => U[u].seg === 'Value'},
+  topmas: {n: 'Top+', f: u => U[u].seg === 'Top+'},
+  topmenos: {n: 'Top-', f: u => U[u].seg === 'Top-'},
   middle: {n: 'Middle', f: u => U[u].seg === 'Middle'},
+  value: {n: 'Value', f: u => U[u].seg === 'Value'},
+  price: {n: 'Price', f: u => U[u].seg === 'Price'},
   pequenas: {n: 'Pequeñas', f: u => U[u].al <= +$('tpeq').value},
   regionales: {n: 'Regionales', f: u => !U[u].lima},
 };
@@ -416,7 +421,7 @@ function render() {
   renderKpis(T); renderTabla(evs); renderScatter(evs); renderHeat(T); renderPaquetes(T);
 }
 
-const PAQ = [{k: 'sinriesgo', n: 5}, {k: 'regionales', n: 5}, {k: 'value', n: 3}, {k: 'pequenas', n: 10}, {k: 'middle', n: 3}, {k: 'top', n: 2}];
+const PAQ = [{k: 'sinriesgo', n: 5}, {k: 'regionales', n: 5}, {k: 'price', n: 3}, {k: 'value', n: 3}, {k: 'pequenas', n: 10}, {k: 'middle', n: 3}, {k: 'topmenos', n: 2}, {k: 'topmas', n: 2}];
 let paqClave = null, paqRes = [];
 function renderPaquetes(T) {
   const modo = $('restr').value;
@@ -460,7 +465,7 @@ function renderKpis(T) {
   }
   for (const c of cells.values()) { const cl = evalCell(c, G, T).cl; if (cl === 'riesgo' || cl === 'alto') nR++; }
   const alL = sum(L, 'al'), alS = sum(S, 'al');
-  const delta = (a, b) => b ? `<span style="color:var(--ink)">+${fmt(b)}</span> sobre ${fmt(a)}` : 'base UPC + UPN';
+  const delta = (a, b) => b ? `<span style="color:var(--ink)">+${fmt(b)}</span> sobre ${fmt(a)}` : 'base Laureate';
   const k = [
     {t: 'Compras', v: S.length, d: S.length ? S.map(i => U[i].s).join(' · ') : 'ninguna seleccionada'},
     {t: 'Alumnos', v: fmt(alL + alS), d: `${pct(alL / tot, 1)} → ${pct((alL + alS) / tot, 1)} del mercado`},
@@ -475,13 +480,14 @@ function renderKpis(T) {
 function renderTabla(evs) {
   const modo = $('restr').value, cn = CRIT[st.crit].n;
   const COLS = [
-    {k: 'chk', h: '', l: true}, {k: 'n', h: 'Universidad', l: true}, {k: 'seg', h: 'Segmento', l: true}, {k: 'al', h: 'Alumnos'}, {k: 'ing', h: 'Ingresos'},
+    {k: 'chk', h: '', l: true}, {k: 'n', h: 'Universidad', l: true}, {k: 'seg', h: 'Segmento', l: true}, {k: 'rkp', h: 'Rk. priv.'}, {k: 'al', h: 'Alumnos'}, {k: 'ing', h: 'Ingresos'},
     {k: 'eb', h: 'EBITDA'}, {k: 'p', h: 'Factible'}, {k: 'v', h: cn + ' factible'}, {k: 'nr', h: 'Riesgo'},
   ];
   const filas = candidatas().map(u => ({u, ev: evs[u], x: U[u], v: valorCrit(evs[u], modo)}));
   const sk = st.sort || 'v';
-  const SEGO = {Top: 'a', Middle: 'b', Value: 'c', 'Resto de privadas': 'd'};
-  const get = f => ({v: f.v, n: f.x.s, seg: SEGO[f.x.seg] || 'e', al: f.x.al, ing: f.x.ing, eb: f.x.eb, p: f.ev.p, nr: f.ev.riesgos.length, chk: st.sel.has(f.u) ? 1 : 0})[sk];
+  const SEGO = {'Top+': 'a', 'Top-': 'b', Middle: 'c', Value: 'd', Price: 'e', 'Resto de privadas': 'f'};
+  // ranking: el 1 arriba (se ordena descendente, por eso el signo); sin ranking al final
+  const get = f => ({v: f.v, n: f.x.s, seg: SEGO[f.x.seg] || 'g', rkp: f.x.rkp == null ? null : -f.x.rkp, al: f.x.al, ing: f.x.ing, eb: f.x.eb, p: f.ev.p, nr: f.ev.riesgos.length, chk: st.sel.has(f.u) ? 1 : 0})[sk];
   filas.sort((a, b) => { const x = get(a), y = get(b); if (x == null) return 1; if (y == null) return -1; return typeof x === 'string' ? x.localeCompare(y) : y - x; });
   const num = (v, a, e) => v == null ? '<td class="nd">–</td>' : `<td${e ? ' class="est" title="EBITDA estimado: D&A = 5.3% de los ingresos"' : ''}>${fmt(v)}${e ? '<span class="yr">e</span>' : ''}${a && a < D.finMax ? `<span class="yr">${a}</span>` : ''}</td>`;
   const head = '<tr>' + COLS.map(c => `<th class="${c.l ? 'l' : ''}${sk === c.k ? ' on' : ''}" data-k="${c.k}">${c.h}</th>`).join('') + '</tr>';
@@ -494,6 +500,7 @@ function renderTabla(evs) {
       <td class="l"><span class="tick"></span></td>
       <td class="l name">${x.s}${/deneg/i.test(x.lic || '') ? ' <span class="yr">lic. denegada</span>' : ''}</td>
       <td class="l segt">${x.seg === 'Resto de privadas' ? 'Resto' : x.seg}${x.lima ? '' : '<span class="tag">regional</span>'}</td>
+      ${x.rkp == null ? '<td class="nd" title="No figura en el ranking Sunedu (Informe Bienal 2017)">–</td>' : `<td title="Ranking Sunedu general: ${x.rkg}${x.rkg === 33 ? ' (empate)' : ''}">${x.rkp}</td>`}
       ${num(x.al)}${num(x.ing, x.ingA)}${num(x.eb, x.ebA, x.ebE)}
       <td><span class="meter"><i><b style="width:${Math.round(100 * ev.p)}%"></b></i>${pct(ev.p)}</span></td>
       ${num(factibleCrit(ev))}<td>${chip}</td></tr>`;
@@ -683,8 +690,12 @@ function leerLibro(wb) {
   const Uh = tabla(wb, 'Base_Universidades'), HU = 'Base_Universidades';
   const cu = {cod: col(Uh, HU, 'Código INEI'), s: col(Uh, HU, 'Sigla'), tipo: col(Uh, HU, 'Tipo_entidad'),
     lic: col(Uh, HU, 'Licencia'), g: col(Uh, HU, 'Grupo'), seg: col(Uh, HU, 'Segmento')};
+  // rankings Sunedu: opcionales (un Excel sin estas columnas sigue funcionando)
+  const opc = nombre => { try { return col(Uh, HU, nombre); } catch (e) { return -1; } };
+  cu.rg = opc('Ranking Sunedu general'); cu.rp = opc('Ranking Sunedu privadas');
   const unis = new Map();
-  for (const r of Uh.d) unis.set(String(r[cu.cod]).trim(), {s: r[cu.s], tipo: r[cu.tipo], lic: r[cu.lic], g: r[cu.g] || '', seg: r[cu.seg]});
+  for (const r of Uh.d) unis.set(String(r[cu.cod]).trim(), {s: r[cu.s], tipo: r[cu.tipo], lic: r[cu.lic], g: r[cu.g] || '', seg: r[cu.seg],
+    rkg: cu.rg < 0 ? null : num(r[cu.rg]), rkp: cu.rp < 0 ? null : num(r[cu.rp])});
   // ---- Base_Financieros
   const F = tabla(wb, 'Base_Financieros'), HF = 'Base_Financieros';
   const cf = {cod: col(F, HF, 'Código INEI'), a: col(F, HF, 'Año'), ing: col(F, HF, 'Ingresos operativos totales'),
@@ -741,7 +752,8 @@ function construir(periodo, esquema, finAnio, selCodes) {
   const unis = cods.map((cod, i) => {
     const e = ent.get(cod), u = BD.unis.get(cod) || {}, priv = e.ges === 'Privado';
     return Object.assign({i, cod, n: e.nom, s: u.s || e.nom, g: u.g || '', priv, lic: u.lic || '', al: Math.round(alU.get(cod)),
-      seg: priv ? (u.seg || 'Resto de privadas') : 'Pública', lima: lima.has(cod)}, financiero(cod, finAnio));
+      seg: priv ? (u.seg || 'Resto de privadas') : 'Pública', rkg: u.rkg ?? null, rkp: priv ? (u.rkp ?? null) : null,
+      lima: lima.has(cod)}, financiero(cod, finAnio));
   });
   const sumBy = (key, filtro) => { const m = new Map(); for (const c of celdas) if (filtro(c)) m.set(key(c), (m.get(key(c)) || 0) + c.al); return m; };
   const esPriv = c => ent.get(c.cod).ges === 'Privado';
