@@ -18,6 +18,12 @@
   // Grupos económicos que cuentan como un solo agente en el IHH (cada universidad se evalúa aparte como posible compra)
   const GRUPOS = [{id: 'G:acuna', n: 'Grupo César Acuña', cods: ['260000052', '260000072', '260000096']}];   // UCV, USS, Autónoma del Perú
   const GRUPO_DE = new Map(GRUPOS.flatMap(g => g.cods.map(c => [c, g])));
+  // Compradores que se pueden evaluar. Laureate = UPC + UPN (hoja Laureate) + UCAL
+  const COMPRADORES = {
+    lau: {c: 'Laureate', n: 'Laureate (UPC + UPN) + UCAL'},
+    acuna: {c: 'Grupo César Acuña', n: 'Grupo César Acuña (UCV + USS + Autónoma del Perú)', cods: GRUPOS[0].cods},
+    utp: {c: 'UTP', n: 'Universidad Tecnológica del Perú (UTP)', cods: ['260000065']},
+  };
   const FUT_DEF = 'Chiclayo, Ica';   // provincias donde Laureate tendrá presencia
   const N_PROM = 6;   // «Promedio de los últimos seis ciclos»
   const CATS = ['Nulo', 'Muy bajo', 'Bajo', 'Moderado', 'Alto', 'Muy alto'];
@@ -33,7 +39,7 @@
 
   let RAW = null, RES = null;
   // escenario base (el botón «Volver al escenario base» regresa a estos valores)
-  const ST0 = {lima: 'sl', univ: 'priv', mod: 'sep', aso: 'no', agr: 'fam', sinCast: false,
+  const ST0 = {comp: 'lau', lima: 'sl', univ: 'priv', mod: 'sep', aso: 'no', agr: 'fam', sinCast: false,
     sortR: {k: 'cat', d: -1}, sortD: {k: 'pond', d: -1}, target: null, busca: '',
     fZona: 'todos', fNivel: '', fMod: '', fGeo: '', abierto: null};
   const st = Object.assign({per: null}, JSON.parse(JSON.stringify(ST0)));
@@ -61,22 +67,108 @@
     if (n === 'a distancia' || n === 'virtual') return 'dist';
     return null;
   }
-  // Condición jurídica de las privadas. Fuente: Sunedu, «Universidades privadas» (sunedu.gob.pe/universidades-privadas),
-  // columna CONDICIÓN JURÍDICA. Se listan las asociativas; las demás privadas de esa lista son societarias.
-  const SUNEDU_ASO = ['Pontificia Universidad Católica del Perú', 'Universidad Peruana Cayetano Heredia', 'Universidad Católica de Santa María',
-    'Universidad del Pacífico', 'Universidad de Lima', 'Universidad de San Martín de Porres', 'Universidad Femenina del Sagrado Corazón',
-    'Universidad Inca Garcilaso de la Vega', 'Universidad de Piura', 'Universidad Ricardo Palma', 'Universidad Andina Néstor Cáceres Velásquez',
-    'Universidad Peruana Los Andes', 'Universidad Peruana Unión', 'Universidad Andina del Cusco', 'Universidad Tecnológica de los Andes',
-    'Universidad Privada de Tacna', 'Universidad Particular de Chiclayo', 'Universidad San Pedro', 'Universidad Privada Antenor Orrego',
-    'Universidad de Huánuco', 'Universidad José Carlos Mariátegui', 'Universidad Marcelino Champagnat', 'Universidad Científica del Perú',
-    'Universidad Católica Los Ángeles de Chimbote', 'Universidad Católica San Pablo', 'Universidad Católica Santo Toribio de Mogrovejo',
-    'Universidad Católica Sedes Sapientiae', 'Universidad Católica de Trujillo Benedicto XVI', 'Universidad ESAN',
-    'Universidad Antonio Ruiz de Montoya', 'Universidad para el Desarrollo Andino', 'Universidad Privada de Trujillo',
-    'Universidad de Ciencias y Humanidades', 'Universidad Jaime Bausate y Meza', 'Universidad Peruana del Centro',
-    'Universidad de Ingeniería y Tecnología', 'Universidad La Salle', 'Universidad Seminario Evangélico de Lima',
-    'Universidad Seminario Bíblico Andino', 'Universidad Católica San José'].map(n => nrm(n));
+  // Universidades privadas según Sunedu («Universidades privadas», sunedu.gob.pe/universidades-privadas):
+  // nombre | departamento | provincia | condición jurídica (A = asociativa, S = societaria).
+  // Sirve para la condición jurídica y para listar, al final, las que no tienen matrícula en Base_Tuni.
+  const SUNEDU = `Pontificia Universidad Católica del Perú|Lima|Lima|A
+Universidad Peruana Cayetano Heredia|Lima|Lima|A
+Universidad Católica de Santa María|Arequipa|Arequipa|A
+Universidad del Pacífico|Lima|Lima|A
+Universidad de Lima|Lima|Lima|A
+Universidad de San Martín de Porres|Lima|Lima|A
+Universidad Femenina del Sagrado Corazón|Lima|Lima|A
+Universidad Inca Garcilaso de la Vega|Lima|Lima|A
+Universidad de Piura|Piura|Piura|A
+Universidad Ricardo Palma|Lima|Lima|A
+Universidad Andina Néstor Cáceres Velásquez|Puno|San Román|A
+Universidad Peruana Los Andes|Junín|Huancayo|A
+Universidad Peruana Unión|Lima|Lima|A
+Universidad Andina del Cusco|Cusco|Cusco|A
+Universidad Tecnológica de los Andes|Apurímac|Abancay|A
+Universidad Privada de Tacna|Tacna|Tacna|A
+Universidad Particular de Chiclayo|Lambayeque|Chiclayo|A
+Universidad San Pedro|Ancash|Santa|A
+Universidad Privada Antenor Orrego|La Libertad|Trujillo|A
+Universidad de Huánuco|Huánuco|Huánuco|A
+Universidad José Carlos Mariátegui|Moquegua|Mariscal Nieto|A
+Universidad Marcelino Champagnat|Lima|Lima|A
+Universidad Científica del Perú|Loreto|Maynas|A
+Universidad César Vallejo S.A.C.|La Libertad|Trujillo|S
+Universidad Católica Los Ángeles de Chimbote|Ancash|Santa|A
+Universidad Peruana de Ciencias Aplicadas S.A.C.|Lima|Lima|S
+Universidad Privada del Norte S.A.C.|La Libertad|Trujillo|S
+Universidad San Ignacio de Loyola S.A.|Lima|Lima|S
+Universidad Alas Peruanas|Lima|Lima|S
+Universidad Privada Norbert Wiener|Lima|Lima|S
+Universidad Católica San Pablo|Arequipa|Arequipa|A
+Grupo Educativo Universidad Privada de Ica S.A.C.|Ica|Ica|S
+Universidad Privada San Juan Bautista S.A.C.|Lima|Lima|S
+Universidad Tecnológica del Perú|Lima|Lima|S
+Universidad Continental S.A.C.|Junín|Huancayo|S
+Universidad Científica del Sur S.A.C.|Lima|Lima|S
+Universidad Católica Santo Toribio de Mogrovejo|Lambayeque|Chiclayo|A
+Universidad Privada Antonio Guillermo Urrelo|Cajamarca|Cajamarca|S
+Universidad Católica Sedes Sapientiae|Lima|Lima|A
+Universidad Señor de Sipán|Lambayeque|Chiclayo|S
+Universidad Católica de Trujillo Benedicto XVI|La Libertad|Trujillo|A
+Universidad Peruana de las Américas|Lima|Lima|S
+Universidad ESAN|Lima|Lima|A
+Universidad Antonio Ruiz de Montoya|Lima|Lima|A
+Universidad Peruana de Ciencias e Informática|Lima|Lima|S
+Universidad para el Desarrollo Andino|Huancavelica|Angaraes|A
+Universidad Privada Telesup|Lima|Lima|S
+Universidad Sergio Bernales S.A.|Lima|Cañete|S
+Universidad Privada de Pucallpa S.A.C.|Ucayali|Coronel Portillo|S
+Universidad Autónoma de Ica S.A.C.|Ica|Chincha|S
+Universidad Privada de Trujillo|La Libertad|Trujillo|A
+Universidad Privada San Carlos|Puno|Puno|S
+Universidad Peruana Simón Bolivar|Lima|Lima|S
+Universidad Peruana de Integración Global S.A.C.|Lima|Lima|S
+Universidad Peruana del Oriente S.A.C.|Loreto|Maynas|S
+Universidad Autónoma del Perú|Lima|Lima|S
+Universidad de Ciencias y Humanidades|Lima|Lima|A
+Universidad Privada Juan Mejía Baca|Lambayeque|Chiclayo|S
+Universidad Jaime Bausate y Meza|Lima|Lima|A
+Universidad Peruana del Centro|Junín|Huancayo|A
+Universidad Privada Arzobispo Loayza S.A.C|Lima|Lima|S
+Universidad Le Cordon Bleu S.A.C.|Lima|Lima|S
+Universidad Privada de Huancayo Franklin Roosevelt|Junín|Huancayo|S
+Universidad de Lambayeque S.A.C.|Lambayeque|Chiclayo|S
+Universidad de Ciencias y Artes de América Latina S.A.C.|Lima|Lima|S
+Universidad Peruana de Arte Orval S.A.C.|Lima|Lima|S
+Universidad Privada de la Selva Peruana|Loreto|Maynas|S
+Universidad Ciencias de la Salud|Arequipa|Arequipa|S
+Universidad de Ayacucho Federico Froebel|Ayacucho|Huamanga|S
+Universidad Peruana de Investigación y Negocios S.A.C.|Lima|Lima|S
+Universidad Peruana Austral del Cusco|Cusco|Cusco|S
+Universidad Autónoma San Francisco|Arequipa|Arequipa|S
+Universidad San Andrés|Lima|Lima|S
+Universidad Interamericana para el Desarrollo|Lima|Lima|S
+Universidad Privada Juan Pablo II|Lima|Lima|S
+Universidad Privada Leonardo Da Vinci S.A.C.|La Libertad|Trujillo|S
+Universidad de Ingeniería y Tecnología|Lima|Lima|A
+Universidad La Salle|Arequipa|Arequipa|A
+Universidad Latinoamericana CIMA|Tacna|Tacna|S
+Universidad Privada Autónoma del Sur|Arequipa|Arequipa|S
+Universidad María Auxiliadora|Lima|Lima|S
+Universidad Politécnica Amazónica S.A.C.|Amazonas|Utcubamba|S
+Universidad Santo Domingo de Guzmán|Lima|Huarochirí|S
+Universidad Marítima del Perú|Callao|Callao|S
+Universidad Privada Líder Peruana|Cusco|La Convención|S
+Universidad Privada Peruano Alemana S.A.C.|Lima|Lima|S
+Universidad Global del Cusco|Cusco|Cusco|S
+Universidad Santo Tomás de Aquino de Ciencia e Integración|Junín|Huancayo|S
+Universidad Privada SISE|Lima|Lima|S
+Universidad Seminario Evangélico de Lima|Lima|Lima|A
+Universidad Seminario Bíblico Andino|Lima|Lima|A
+Universidad Católica San José|Lima|Lima|A`.split('\n').map(l => { const [n, dep, prov, c] = l.split('|'); return {n, dep, prov, aso: c === 'A'}; });
+  // clave de nombre para cruzar listas: sin tildes, paréntesis, forma societaria ni signos
+  const clave = s => String(s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\(.*?\)/g, '')
+    .replace(/\b(s\.?\s?a\.?\s?c\.?|s\.?\s?a\.?|s\.?\s?r\.?\s?l\.?|asociacion civil|grupo educativo)\b/g, '').replace(/[^a-z ]/g, ' ').replace(/\s+/g, ' ').trim();
+  const SUNEDU_ASO = SUNEDU.filter(u => u.aso).map(u => nrm(u.n));
   // Respaldo si un nombre no está en la lista: razón social con forma de sociedad (S.A.C., S.A., S.R.L., E.I.R.L.) = societaria
   const esSocietaria = nom => /(s\.?\s?a\.?\s?c\.?|s\.\s?a\.?(\s?a\.?)?|s\.\s?r\.\s?l\.?|e\.\s?i\.\s?r\.\s?l\.?)\s*$/i.test(String(nom || '').trim());
+  const esAsociativa = nom => SUNEDU_ASO.some(n => nrm(nom).includes(n)) || !esSocietaria(nom);
   const famOk = r3 => r3 != null && r3 !== '' && nrm(r3) !== 'no se encuentra';
 
   function leer(wb) {
@@ -90,6 +182,18 @@
     c.p2 = col(T, H, 'Presencial (+semi)', iFin); c.dist = col(T, H, 'A distancia', iFin);
     const tuni = [];
     let tSinFam = 0;
+    // actividad de cada universidad por ciclo (alumnos y departamentos), para listar las que no tienen alumnos
+    const act = new Map();
+    for (const r of T.d) {
+      const cod = String(r[c.cod] ?? '').trim();
+      if (!cod) continue;
+      if (!act.has(cod)) act.set(cod, {nom: r[c.nom], priv: r[c.ges] === 'Privado', per: new Map()});
+      const a = act.get(cod), pe = String(r[c.per]);
+      if (!a.per.has(pe)) a.per.set(pe, {v: 0, deps: new Map()});
+      const o = a.per.get(pe), v = (num(r[c.p2]) || 0) + (num(r[c.dist]) || 0);
+      o.v += v;
+      if (v > 0 && r[c.dep]) o.deps.set(r[c.dep], (o.deps.get(r[c.dep]) || 0) + v);
+    }
     for (const r of T.d) {
       const niv = nivelTuni(r[c.niv]);
       if (!niv) continue;
@@ -149,7 +253,13 @@
     const provT = new Map(); for (const r of tuni) { provT.set(nrm(r.pA), r.pA); provT.set(nrm(r.pL), r.pL); }
     for (const x of lau) x.prov = provT.get(nrm(x.prov)) || x.prov;
     const callao = [...provT.values()].find(p => /callao/i.test(p)) || 'Prov. Const. del Callao';
-    return {tuni, lau, compra, ucalTuni, macro, emps: emps.map(empS), sig, nomA, periodos, callao, tSinFam, lSinFam};
+    // universidades de la lista de Sunedu que están en Base_Tuni (por nombre)
+    const claves = [...act].map(([cod, a]) => [cod, clave(a.nom)]);
+    const sunCod = new Map(SUNEDU.map(u => {
+      const k = clave(u.n), hit = claves.find(([, kk]) => kk === k) || claves.find(([, kk]) => kk.includes(k) || k.includes(kk));
+      return [u.n, hit ? hit[0] : null];
+    }));
+    return {tuni, lau, compra, ucalTuni, macro, act, sunCod, emps: emps.map(empS), sig, nomA, periodos, callao, tSinFam, lSinFam};
   }
 
   // ------------------------------------------------------------------ cálculo
@@ -187,11 +297,13 @@
     const i = (a.length - 1) * Math.min(100, Math.max(0, q)) / 100, lo = Math.floor(i);
     return a[lo] + (a[Math.min(lo + 1, a.length - 1)] - a[lo]) * (i - lo);
   }
-  // segmentos de valor del comprador (solo Laureate: UPC y UPN; UCAL no cuenta): [[segmento, sigla], ...]
-  const SEG_A = () => [...RAW.compra].filter(c => c !== UCAL.cod).map(c => [(BD.unis.get(c) || {}).seg, RAW.sig(c)]).filter(([sg]) => sg && sg !== 'Pública');
+  // segmentos de valor del comprador: [[segmento, sigla], ...]. Laureate: solo UPC y UPN (UCAL no cuenta)
+  const SEG_A = comp => (comp === 'lau' ? [...RAW.compra].filter(c => c !== UCAL.cod) : COMPRADORES[comp].cods)
+    .map(c => [(BD.unis.get(c) || {}).seg, RAW.sig(c)]).filter(([sg]) => sg && sg !== 'Pública');
   const periodosSel = () => st.per === 'prom' ? RAW.periodos.slice(-N_PROM) : [st.per];
 
-  function calcular() {
+  // Calcula mercados y posibles compras para un comprador ('lau', 'acuna' o 'utp') con los filtros vigentes
+  function calcular(comp) {
     const R = RAW, p = P();
     const niveles = new Set(NIVELES);
     const PS = new Set(periodosSel()), fac = 1 / PS.size;   // promedio: cada ciclo pesa 1/6
@@ -200,7 +312,10 @@
       : [['Presencial + semi', 'p2', p.wPres], ['Virtual', 'dist', p.wVirt]];
     const wNiv = {Pregrado: p.wPre, 'Maestría': p.wMae, Doctorado: p.wDoc};
     const grp = r3 => st.agr === 'macro' ? (R.macro.get(r3) || r3) : r3;   // agrupación de carreras
-    const fut = new Set(String($('cp-fut') ? $('cp-fut').value : FUT_DEF).split(',').map(x => nrm(x)).filter(Boolean));
+    const fut = new Set(comp !== 'lau' ? [] : String($('cp-fut') ? $('cp-fut').value : FUT_DEF).split(',').map(x => nrm(x)).filter(Boolean));
+    // Laureate (UPC + UPN + UCAL) es 'A' si compra, o 'L' (un solo agente competidor) si compra otro
+    const firmL = comp === 'lau' ? 'A' : 'L';
+    const buy = comp === 'lau' ? null : new Set(COMPRADORES[comp].cods);
     const mk = new Map();
     const add = (niv, r3, mi, geo, firm, v) => {
       const k = niv + '|' + r3 + '|' + mi + '|' + geo;
@@ -214,19 +329,19 @@
       if (!PS.has(r.per)) continue;
       const niv = r.niv;
       if (!niveles.has(niv)) continue;
-      const enA = R.compra.has(r.cod);
-      if (enA && !(r.cod === UCAL.cod && R.ucalTuni)) continue;   // UPC y UPN salen de la hoja Laureate
-      if (!enA && !esUniversidad(r.cod, r.nom)) continue;
-      if (!enA && st.univ === 'priv' && !r.priv) continue;
-      const firm = enA ? 'A' : r.cod;
+      const enL = R.compra.has(r.cod), enB = !!buy && buy.has(r.cod);
+      if (enL && !(r.cod === UCAL.cod && R.ucalTuni)) continue;   // UPC y UPN salen de la hoja Laureate
+      if (!enL && !enB && !esUniversidad(r.cod, r.nom)) continue;
+      if (!enL && !enB && st.univ === 'priv' && !r.priv) continue;
+      const firm = enL ? firmL : enB ? 'A' : r.cod;
       MODS.forEach(([, campo], mi) => { const v = r[campo]; if (v > 0) add(niv, grp(r.r3), mi, geoT(r, campo === 'dist'), firm, v * fac); });
     }
-    // Hoja Laureate: comprador
+    // Hoja Laureate
     for (const x of R.lau) {
       if (!PS.has(x.per) || !niveles.has(x.niv)) continue;
       const mi = x.m === 'dist' ? MODS.length - 1 : (st.mod === 'sep' ? (x.m === 'semi' ? 1 : 0) : 0);
       const geo = x.m === 'dist' ? 'Nacional' : (st.lima === 'sl' && x.callao ? R.callao : x.prov);
-      add(x.niv, grp(x.r3), mi, geo, 'A', x.n * fac);
+      add(x.niv, grp(x.r3), mi, geo, firmL, x.n * fac);
     }
     // regiones (departamentos) de cada universidad en el alcance
     const regU = new Map();
@@ -249,7 +364,7 @@
       m.hhi = hhi; m.A = m.f.get('A') || 0; m.sA = 100 * m.A / m.tot;
       m.wNiv = wNiv[m.niv]; m.wMod = MODS[m.mi][2];
       m.fut = m.A === 0 && m.geo !== 'Nacional' && fut.has(nrm(m.geo));
-      for (const [firm, v] of m.f) if (firm !== 'A') { if (!porU.has(firm)) porU.set(firm, []); porU.get(firm).push(m); }
+      for (const [firm] of m.f) if (firm !== 'A' && firm !== 'L') { if (!porU.has(firm)) porU.set(firm, []); porU.get(firm).push(m); }
     }
     // tamaño relativo: mercados por debajo del percentil pTam de su ámbito geográfico (todos los mercados del ámbito)
     const porGeo = new Map();
@@ -262,8 +377,8 @@
     }
     // productos (nivel × familia × modalidad) que el comprador ya ofrece en algún ámbito
     const prodA = new Set(mercados.filter(m => m.A > 0).map(m => m.niv + '|' + m.r3 + '|' + m.mi));
-    // candidatas: privadas fuera del comprador
-    const priv = new Map(); for (const r of R.tuni) if (r.priv) priv.set(r.cod, r.nom);
+    // candidatas: privadas fuera del comprador y fuera de Laureate
+    const priv = new Map(); for (const r of R.tuni) if (r.priv && !R.compra.has(r.cod) && !(buy && buy.has(r.cod))) priv.set(r.cod, r.nom);
     const zs = [0, p.z1, p.z2, p.z3, p.z4];
     const evalua = (cod) => {
       const filas = [];
@@ -285,10 +400,11 @@
       }
       return filas;
     };
+    const segA = SEG_A(comp);
     const res = [];
     for (const [cod] of porU) {
       if (!priv.has(cod)) continue;
-      const aso = SUNEDU_ASO.some(n => nrm(priv.get(cod)).includes(n)) || !esSocietaria(priv.get(cod));
+      const aso = esAsociativa(priv.get(cod));
       if (aso && st.aso === 'no') continue;
       const filas = evalua(cod), tr = filas.filter(f => f.tras);
       const zc = [0, 0, 0, 0, 0], cc = [0, 0, 0, 0, 0, 0];
@@ -304,18 +420,47 @@
       const segs = [...segM].sort((a, b) => b[1] - a[1]);
       const regs = [...(regU.get(cod) || new Map())].sort((a, b) => b[1] - a[1]);
       const cat = catOperacion(cc, p.nConf);
-      const segU = (BD.unis.get(cod) || {}).seg || 'Resto de privadas';
-      const mismoSeg = SEG_A().filter(([sg]) => sg === segU).map(([, sig]) => sig);
+      const u = BD.unis.get(cod) || {};
+      const segU = u.seg || 'Resto de privadas';
+      const mismoSeg = segA.filter(([sg]) => sg === segU).map(([, sig]) => sig);
       const ge4 = cc[4] + cc[5];
       const fF = filas.filter(f => f.fut), fP = fF.filter(f => f.futP);
       const futr = {n: fF.length, nP: fP.length, al: fF.reduce((s, f) => s + f.B, 0), alP: fP.reduce((s, f) => s + f.B, 0),
         geos: [...new Set(fF.map(f => f.m.geo))]};
-      res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: segU, mismoSeg,
+      res.push({cod, s: R.sig(cod), nom: priv.get(cod), seg: segU, lic: u.lic, mismoSeg,
         al, nMk: filas.length, nTr: tr.length, zc, cc, segs, regs, aso, futr, grupo: GRUPO_DE.get(cod), ind, cat, ge4, max, q14: filas.filter(f => f.q14).length, alT, alZ2,
         rk: cat == null ? -1 : cat * 1e6 + (cat >= 1 ? cc.slice(cat).reduce((s, v) => s + v, 0) : 0) * 1e3 + (ind || 0)});
     }
     const mA = mercados.filter(m => m.A > 0);
-    RES = {p, mercados, res, evalua, fut, alA: mA.reduce((s, m) => s + m.A, 0), nMA: mA.length};
+    return {p, comp, mercados, res, evalua, fut, alA: mA.reduce((s, m) => s + m.A, 0), nMA: mA.length};
+  }
+
+  // Universidades privadas que no se evalúan: sin alumnos en el periodo elegido, o que no están en Base_Tuni.
+  // Se listan al final, en gris, con el motivo y la licencia (Base_Universidades).
+  function inactivas(r) {
+    const R = RAW, activos = new Set(r.res.map(x => x.cod));
+    const excl = new Set([...R.compra, ...(r.comp === 'lau' ? [] : COMPRADORES[r.comp].cods)]);
+    const ps = periodosSel(), perTxt = st.per === 'prom' ? `los últimos ${ps.length} ciclos (${ps[0]} a ${ps[ps.length - 1]})` : st.per;
+    const out = [];
+    for (const [cod, a] of R.act) {
+      if (!a.priv || activos.has(cod) || excl.has(cod) || !esUniversidad(cod, a.nom)) continue;
+      const aso = esAsociativa(a.nom);
+      if (aso && st.aso === 'no') continue;
+      const pers = [...a.per].filter(([, o]) => o.v > 0).map(([p]) => p).sort();
+      const ult = pers[pers.length - 1];
+      const deps = ult ? [...a.per.get(ult).deps].sort((x, y) => y[1] - x[1]).map(([d]) => d) : [];
+      const u = BD.unis.get(cod) || {};
+      out.push({cod, s: R.sig(cod), nom: a.nom, seg: u.seg || 'Resto de privadas', aso, lic: u.lic || null, deps, ubicaba: true,
+        motivo: ult ? `Sin alumnos en ${perTxt}; último ciclo con alumnos: ${ult}` : 'Sin alumnos registrados en Base_Tuni'});
+    }
+    for (const x of SUNEDU) {
+      if (R.sunCod.get(x.n)) continue;   // está en Base_Tuni
+      if (x.aso && st.aso === 'no') continue;
+      out.push({cod: null, s: x.n.replace(/^(Grupo Educativo )?Universidad (de |del |para el )?/, '').replace(/\s*S\.?\s?A\.?\s?C?\.?$/i, ''), nom: x.n, seg: '', aso: x.aso, lic: null,
+        deps: [x.dep + (x.prov && x.prov !== x.dep ? ' (' + x.prov + ')' : '')], ubicaba: false,
+        motivo: 'No está en Base_Tuni: sin matrícula reportada entre ' + R.periodos[0] + ' y ' + R.periodos[R.periodos.length - 1]});
+    }
+    return out.sort((a, b) => a.s.localeCompare(b.s, 'es'));
   }
 
   // ------------------------------------------------------------------ interfaz
@@ -332,6 +477,7 @@
     <div class="fuente" id="cp-fuente"></div>
     <section class="card">
       <div class="controls">
+        <div class="field"><span>Comprador</span>${segBtns('cp-comp', Object.entries(COMPRADORES).map(([k, c]) => [k, k === 'lau' ? 'Laureate + UCAL' : c.c]), st.comp)}</div>
         <div class="field"><span>Periodo</span><select id="cp-per"></select></div>
         <div class="field"><span>Lima</span>${segBtns('cp-lima', [['lc', 'Lima + Callao'], ['sl', 'Solo Lima']], st.lima)}</div>
         <div class="field"><span>Universidades en el mercado</span>${segBtns('cp-univ', [['all', 'Privadas y públicas'], ['priv', 'Solo privadas']], st.univ)}</div>
@@ -365,6 +511,10 @@
       </div>
     </details>
     <section class="kpis" id="cp-kpis"></section>
+    <details class="card cp-riesgo" id="cp-cmp-d">
+      <summary><h2>Comparar compradores <small>clic para desplegar · cómo se vería este resumen si el comprador fuera el Grupo César Acuña o UTP (mismos filtros y parámetros)</small></h2></summary>
+      <div id="cp-cmp"></div>
+    </details>
     <section class="card">
       <h2>Evaluación por posible compra <small id="cp-res-hint"></small>
         <label class="cp-tgl" title="Peso 1 para todos los niveles y modalidades: la categoría de cada mercado sale solo de su zona"><input type="checkbox" id="cp-sinc"${st.sinCast ? ' checked' : ''}> Sin castigos por nivel y modalidad</label>
@@ -402,6 +552,8 @@
           <li><b>Grupos económicos:</b> el Grupo César Acuña (UCV, USS y Autónoma del Perú) cuenta como un solo agente en el IHH. Cada universidad se evalúa aparte como posible compra: ΔIHH = 2 × s<sub>B</sub> × (s<sub>A</sub> + s<sub>B</sub> − s<sub>Grupo</sub>), que equivale a 2 × s<sub>A</sub> × s<sub>B</sub> cuando la universidad es la única del grupo en el mercado.</li>
           <li><b>Traslape futuro:</b> mercados presenciales y semipresenciales de las provincias donde Laureate tendrá presencia (Chiclayo e Ica, editable en Parámetros de riesgo) en los que hoy el comprador no tiene alumnos. No entran en la categoría; el número ⚠ cuenta los de carreras que el comprador ya ofrece en otra provincia.</li>
           <li><b>Sin castigos:</b> la casilla junto al buscador pone peso 1 a todos los castigos (nivel, modalidad, tamaño y líder post), de modo que la categoría de cada mercado sale solo de su zona.</li>
+          <li><b>Comprador:</b> por defecto Laureate (UPC + UPN) + UCAL. También se puede evaluar como comprador al Grupo César Acuña (UCV + USS + Autónoma del Perú) o a UTP, ambos desde Base_Tuni; en ese caso Laureate + UCAL es un solo agente competidor y no se evalúa como compra. «Comparar compradores» muestra el resumen de los tres con los mismos filtros.</li>
+          <li><b>Universidades sin actividad:</b> al final de la lista, en gris, las privadas sin alumnos en el periodo elegido (con su último ciclo con alumnos y dónde se ubicaban) y las de la lista de Sunedu que no están en Base_Tuni (con su ubicación según Sunedu). No se evalúan. La licencia sale de Base_Universidades (columna Licencia).</li>
           <li>Esta pestaña es un análisis aparte: no cambia el simulador ni sus resultados.</li>
         </ul>
       </details>
@@ -411,12 +563,13 @@
       $(id).querySelectorAll('button').forEach(x => x.classList.remove('on')); b.classList.add('on');
       st[key] = b.dataset.v; recalcular();
     });
-    seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-aso', 'aso'); seg('cp-agr', 'agr');
+    seg('cp-comp', 'comp'); seg('cp-lima', 'lima'); seg('cp-univ', 'univ'); seg('cp-mod', 'mod'); seg('cp-aso', 'aso'); seg('cp-agr', 'agr');
     $('cp-per').onchange = () => { st.per = $('cp-per').value; recalcular(); };
     Object.keys(DEF).forEach(k => $('cp-' + k).onchange = recalcular);
     $('cp-fut').onchange = recalcular;
     $('cp-reset').onclick = () => { Object.keys(DEF).forEach(k => $('cp-' + k).value = DEF[k]); $('cp-fut').value = FUT_DEF; recalcular(); };
     $('cp-base').onclick = escenarioBase;
+    $('cp-cmp-d').ontoggle = () => { if ($('cp-cmp-d').open) pintarCmp(); };
     $('cp-sinc').onchange = () => { st.sinCast = $('cp-sinc').checked; recalcular(); };
     $('cp-busca').oninput = () => { st.busca = $('cp-busca').value; pintarRes(); };
     $('cp-target').onchange = () => { st.target = $('cp-target').value; st.abierto = null; pintarDet(); };
@@ -427,7 +580,7 @@
   }
 
   function recalcular() {
-    calcular();
+    RES = calcular(st.comp);
     const mods = [...new Set(RES.mercados.map(m => m.mod))];
     if (!mods.includes(st.fMod)) st.fMod = '';
     $('cp-fm').innerHTML = '<option value="">Todas</option>' + mods.map(m => `<option${m === st.fMod ? ' selected' : ''}>${m}</option>`).join('');
@@ -438,24 +591,54 @@
 
   function pintarFuente() {
     const R = RAW, av = [], ps = periodosSel();
-    const comp = [...R.emps, ...(R.ucalTuni ? ['UCAL'] : [])].join(' + ');
-    const sinFam = ps.reduce((s, p) => s + (R.lSinFam.get(p) || 0), 0) / ps.length;
-    if (sinFam >= 1) av.push(`<span class="warn" title="Filas de pregrado o posgrado de la hoja Laureate sin Familia Sunedu (p. ej. «_Masters Incl Other»); no entran al cálculo. Diplomados y cursos cortos se excluyen siempre.">${fmt(sinFam)} alumnos de Laureate sin Familia Sunedu</span>`);
     const perTxt = st.per === 'prom' ? `promedio ${ps[0]} a ${ps[ps.length - 1]}` : st.per;
-    $('cp-fuente').innerHTML = `<span>Comprador: <b>${esc(comp)}</b> · Laureate desde la hoja «Laureate» (sin diplomados ni cursos cortos)${R.ucalTuni ? ', UCAL desde Base_Tuni' : ''}</span>
+    let txt;
+    if (RES.comp === 'lau') {
+      const comp = [...R.emps, ...(R.ucalTuni ? ['UCAL'] : [])].join(' + ');
+      const sinFam = ps.reduce((s, p) => s + (R.lSinFam.get(p) || 0), 0) / ps.length;
+      if (sinFam >= 1) av.push(`<span class="warn" title="Filas de pregrado o posgrado de la hoja Laureate sin Familia Sunedu (p. ej. «_Masters Incl Other»); no entran al cálculo. Diplomados y cursos cortos se excluyen siempre.">${fmt(sinFam)} alumnos de Laureate sin Familia Sunedu</span>`);
+      txt = `Comprador: <b>${esc(comp)}</b> · Laureate desde la hoja «Laureate» (sin diplomados ni cursos cortos)${R.ucalTuni ? ', UCAL desde Base_Tuni' : ''}`;
+    } else {
+      txt = `Comprador: <b>${esc(COMPRADORES[RES.comp].n)}</b> · desde Base_Tuni · Laureate (UPC + UPN + UCAL) cuenta como un solo agente competidor y no se evalúa como compra`;
+    }
+    $('cp-fuente').innerHTML = `<span>${txt}</span>
       <span>${fmt(RES.alA)} alumnos del comprador en ${fmt(RES.nMA)} mercados · ${esc(perTxt)}</span>${av.join('')}`;
   }
 
+  // resumen de una evaluación (para las cajas y la comparación de compradores)
+  function resumen(r) {
+    const conT = r.res.filter(x => x.nTr), n = c => conT.filter(x => x.cat === c).length;
+    return {r, conT, cats: [0, 1, 2, 3, 4, 5].map(n), top: r.res.filter(x => x.cat >= 4).sort((a, b) => b.rk - a.rk)};
+  }
+
   function pintarKpis() {
-    const r = RES.res, conT = r.filter(x => x.nTr);
-    const mAltas = conT.filter(x => x.cat === 5).length, altas = conT.filter(x => x.cat === 4).length, mods = conT.filter(x => x.cat === 3).length;
+    const {r, conT, cats} = resumen(RES);
     const k = (t, v, d, cl = '') => `<div class="kpi ${cl}"><div class="t">${t}</div><div class="v">${v}</div><div class="d">${d}</div></div>`;
     $('cp-kpis').innerHTML =
-      k('Comprador', fmt(RES.alA), 'alumnos en el alcance elegido') +
+      k('Comprador · ' + esc(COMPRADORES[RES.comp].c), fmt(RES.alA), 'alumnos en el alcance elegido') +
       k('Mercados relevantes', `${fmt(RES.nMA)} <small>/ ${fmt(RES.mercados.length)}</small>`, `${fmt(RES.nMA)} con presencia del comprador, de ${fmt(RES.mercados.length)} en total`) +
-      k('Posibles compras', fmt(r.length), `${fmt(conT.length)} con al menos un traslape`) +
-      k('Riesgo muy alto', fmt(mAltas), 'posibles compras', mAltas ? 'alert' : '') +
-      k('Riesgo alto', fmt(altas), `${fmt(mods)} con riesgo moderado`);
+      k('Posibles compras', fmt(r.res.length), `${fmt(conT.length)} con al menos un traslape`) +
+      k('Riesgo muy alto', fmt(cats[5]), 'posibles compras', cats[5] ? 'alert' : '') +
+      k('Riesgo alto', fmt(cats[4]), `${fmt(cats[3])} con riesgo moderado`);
+    if ($('cp-cmp-d').open) pintarCmp();
+  }
+
+  // ¿cómo se vería el resumen con otro comprador? (mismos filtros y parámetros)
+  function pintarCmp() {
+    const filas = Object.keys(COMPRADORES).map(c => resumen(c === RES.comp ? RES : calcular(c)));
+    const th = '<tr><th class="l">Comprador</th><th>Alumnos</th><th>Mercados con presencia</th><th>Posibles compras</th><th>Con traslape</th>' +
+      [5, 4, 3].map(c => `<th>${CATS[c]}</th>`).join('') + '<th>Bajo o menos</th><th class="l">Distribución</th><th class="l">Compras de mayor riesgo</th><th></th></tr>';
+    const rows = filas.map(({r, conT, cats, top}) => `<tr class="${r.comp === RES.comp ? 'sel' : ''}">
+      <td class="l"><b>${esc(COMPRADORES[r.comp].c)}</b>${r.comp === RES.comp ? ' <span class="tag">actual</span>' : ''}<div class="cp-nom" style="margin:0">${esc(COMPRADORES[r.comp].n)}</div></td>
+      <td>${fmt(r.alA)}</td><td>${fmt(r.nMA)} <span class="nd">/ ${fmt(r.mercados.length)}</span></td><td>${r.res.length}</td><td>${conT.length}</td>
+      ${[5, 4, 3].map(c => `<td>${cats[c] ? `<span class="cc c${c}">${cats[c]}</span>` : '<span class="nd">·</span>'}</td>`).join('')}
+      <td>${cats[1] + cats[2] || '<span class="nd">·</span>'}</td>
+      <td class="l">${barra(cats, conT.length)}</td>
+      <td class="l cp-top">${top.slice(0, 5).map(x => `<span class="cc c${x.cat}" title="${esc(x.nom)} · ${CATS[x.cat]}">${esc(x.s)}</span>`).join(' ') || '<span class="nd">ninguna en Alto o Muy alto</span>'}${top.length > 5 ? ` <span class="nd">+${top.length - 5}</span>` : ''}</td>
+      <td>${r.comp === RES.comp ? '' : `<button class="btn ghost sm cp-ver" data-c="${r.comp}">Ver detalle</button>`}</td></tr>`).join('');
+    $('cp-cmp').innerHTML = `<div class="tbl-wrap"><table class="tbl cp">${th}${rows}</table></div>
+      <p class="cp-nota">Cada fila recalcula la evaluación completa con ese comprador. Con Acuña o UTP como comprador, Laureate (UPC + UPN + UCAL) es un competidor más y no se evalúa como compra; tampoco se muestra el traslape futuro de Laureate.</p>`;
+    $('cp-cmp').querySelectorAll('.cp-ver').forEach(b => b.onclick = () => $('cp-comp').querySelector(`[data-v="${b.dataset.c}"]`).click());
   }
 
   const COLS_R = [
@@ -507,10 +690,11 @@
     let xs = RES.res.filter(x => !q || nrm(x.s).includes(q) || nrm(x.nom).includes(q));
     const {k, d} = st.sortR;
     xs.sort((a, b) => { const va = valR(a, k), vb = valR(b, k); return (va == null) - (vb == null) || (va < vb ? -d : va > vb ? d : 0) || b.al - a.al; });
-    $('cp-res-hint').textContent = `${xs.length} universidades privadas · clic en una fila para ver el detalle`;
+    const ina = inactivas(RES).filter(x => !q || nrm(x.s).includes(q) || nrm(x.nom).includes(q));
+    $('cp-res-hint').textContent = `${xs.length} universidades privadas evaluadas · ${ina.length} sin actividad al final · clic en una fila para ver el detalle`;
     const th = COLS_R.map((c, i) => `<th class="${c.l ? 'l' : ''}${i ? '' : ' stk'}${k === c.k ? ' on' : ''}" data-k="${c.k}"${c.t || c.tf ? ` title="${esc(c.tf ? c.tf(RES.p) : c.t)}"` : ''}${c.ns ? '' : ' style="cursor:pointer"'}>${c.n}${k === c.k ? (d < 0 ? ' ↓' : ' ↑') : ''}</th>`).join('');
     const rows = xs.map(x => `<tr class="row${x.cod === st.target ? ' sel' : ''}" data-cod="${x.cod}">
-      <td class="l cp-uni stk"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag${x.mismoSeg.length ? ' cp-mseg' : ''}"${x.mismoSeg.length ? ` title="Mismo segmento de valor que ${esc(x.mismoSeg.join(' y '))} (${esc(x.seg)})"` : ''}>${esc(x.seg)}${x.aso ? ' · asociativa' : ''}${x.grupo ? ' · ' + esc(x.grupo.n) : ''}</span></td>
+      <td class="l cp-uni stk"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span><span class="tag${x.mismoSeg.length ? ' cp-mseg' : ''}"${x.mismoSeg.length ? ` title="Mismo segmento de valor que ${esc(x.mismoSeg.join(' y '))} (${esc(x.seg)})"` : ''}>${esc(x.seg)}${x.aso ? ' · asociativa' : ''}${x.grupo ? ' · ' + esc(x.grupo.n) : ''}${x.lic === 'Licencia Denegada' ? ' · licencia denegada' : ''}</span></td>
       <td class="l cp-reg" title="${esc(x.regs.map(([d, v]) => `${d}: ${fmt(v)} alumnos`).join('\n'))}">${x.futr.n ? celFut(x) + ' ' : ''}${x.regs.length ? lista(x.regs, 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
       <td class="l cp-seg" title="${esc(x.segs.map(([sg, v]) => `${sg}: ${fmt(v)} alumnos`).join('\n'))}">${NIVELES.filter(nv => x.segs.some(([sg]) => sg.startsWith(nv))).map(nv => `<span class="cp-sg">${NIV_C[nv]}</span>`).join('')}</td>
       <td>${fmt(x.al)}</td><td>${x.nMk}</td><td>${x.nTr || '<span class="nd">0</span>'}</td>
@@ -518,7 +702,12 @@
       <td class="l">${barra(x.cc, x.nTr)}</td>
       <td>${x.ind == null ? '–' : f2(x.ind)}</td>
       <td>${chipC(x.cat)}</td></tr>`).join('');
-    $('cp-res').innerHTML = `<tr>${th}</tr>${rows}`;
+    const licTxt = l => !l ? 'Licencia: sin dato (no está en Base_Universidades)' : l === 'Licencia Denegada' ? '<b>Licencia denegada</b>' : 'Licencia: ' + esc(l);
+    const rowsI = ina.length ? `<tr class="cp-sep"><td class="l stk" colspan="2">Sin actividad en el periodo · no se evalúan</td><td colspan="${COLS_R.length - 2}"></td></tr>` + ina.map(x => `<tr class="cp-inact">
+      <td class="l cp-uni stk"><span class="name" title="${esc(x.nom)}">${esc(x.s)}</span>${x.seg || x.aso ? `<span class="tag">${esc([x.seg, x.aso ? 'asociativa' : ''].filter(Boolean).join(' · '))}</span>` : ''}</td>
+      <td class="l cp-reg" title="${esc((x.ubicaba ? 'Departamentos en su último ciclo con alumnos: ' : 'Ubicación según Sunedu: ') + x.deps.join(', '))}">${x.deps.length ? (x.ubicaba ? '<span class="nd">ubicaba:</span> ' : '') + lista(x.deps.map(d => [d]), 2, ([d]) => d) : '<span class="nd">–</span>'}</td>
+      <td class="l cp-motivo" colspan="${COLS_R.length - 2}">${esc(x.motivo)} · ${licTxt(x.lic)}</td></tr>`).join('') : '';
+    $('cp-res').innerHTML = `<tr>${th}</tr>${rows}${rowsI}`;
     $('cp-res').querySelectorAll('th').forEach(t => {
       const c = COLS_R.find(c => c.k === t.dataset.k);
       if (c.ns) return;
@@ -528,7 +717,7 @@
       st.target = tr.dataset.cod; st.abierto = null; $('cp-target').value = st.target; pintarRes(); pintarDet();
       $('cp-det-card').scrollIntoView({behavior: 'smooth', block: 'start'});
     });
-    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ' + (st.sinCast ? '<b>sin castigos</b> (solo zona)' : 'ponderada (zona × castigos por nivel, modalidad, tamaño y líder post)') + '; Nulo = sin traslape. Segmento resaltado = mismo segmento de valor que el comprador. ⚠ en Regiones = traslapes futuros donde Laureate tendrá presencia (' + esc(futTxt()) + '). Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
+    $('cp-leyenda').innerHTML = '<span>Columnas Nulo a Muy alto: mercados por categoría ' + (st.sinCast ? '<b>sin castigos</b> (solo zona)' : 'ponderada (zona × castigos por nivel, modalidad, tamaño y líder post)') + '; Nulo = sin traslape. Segmento resaltado = mismo segmento de valor que el comprador. ⚠ en Regiones = traslapes futuros donde Laureate tendrá presencia (' + esc(futTxt()) + '; solo con Laureate como comprador). En gris, al final: privadas sin alumnos en el periodo o fuera de Base_Tuni. Pasa el cursor sobre un número o un encabezado para ver cómo se calcula.</span>' +
       '<span style="margin-left:auto">' + CATS.map((c, i) => `<i class="c${i}"></i>${c}`).join(' ') + '</span>';
     // selector de universidad
     const opts = RES.res.slice().sort((a, b) => a.s.localeCompare(b.s, 'es'));
@@ -614,7 +803,8 @@
     xs.sort((a, b) => b.v - a.v);
     const MAX = 12, top = xs.slice(0, MAX), resto = xs.slice(MAX);
     const nombre = firm => {
-      if (firm === 'A') return 'Comprador (Laureate + UCAL)';
+      if (firm === 'A') return 'Comprador: ' + COMPRADORES[RES.comp].n;
+      if (firm === 'L') return 'Laureate (UPC + UPN + UCAL)';
       const g = GRUPOS.find(g => g.id === firm);
       if (!g) return RAW.sig(firm);
       return g.n + ' (' + g.cods.filter(c => m.f.has(c)).map(c => RAW.sig(c) + ' ' + fmt(m.f.get(c))).join(', ') + ')';
