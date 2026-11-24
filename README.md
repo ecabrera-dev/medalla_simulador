@@ -37,9 +37,11 @@ Requiere internet para la librería de lectura de Excel (SheetJS desde cdnjs).
 | `Base_Financieros` | ingresos, utilidad operativa, resultado neto y EBITDA por universidad y año (S/ millones) | Código INEI, Año, Ingresos operativos totales, Utilidad operativa, Resultado neto, EBITDA, EBITDA estimado |
 | `Base_Universidades` | sigla, tipo de entidad, licencia, grupo comprador, segmento y ranking Sunedu | Código INEI, Sigla, Tipo_entidad, Licencia, Grupo, Segmento; opcionales: Ranking Sunedu general, Ranking Sunedu privadas |
 
-**Segmentos** (columna Segmento, 2026-11-19): Top+, Top-, Middle, Value, Price, Resto de privadas y Pública. Top+, Top- y Middle siguen el Segundo Avance (UPC en Top-, UCAL en Middle). Value y Price se separan por la pensión mensual mínima de la web (Price si es menor a S/ 550; la promedio si no hay mínima); UPN es Value. «Resto de privadas» = privadas sin pensión levantada. **Grupo** = Laureate para UPC, UPN y UCAL.
+**Segmentos** (columna Segmento, 2026-11-24): Top, Middle, Value, Price y Pública, por pensión promedio (regla del deck del 2026-11-23): Price menor a S/ 750, Value de S/ 750 a 1,000, Middle sobre S/ 1,000 y Top (antiguos Top+ y Top-). Laureate: UPC Top, UCAL Middle, UPN Value. Las privadas sin pensión levantada (no licenciadas y escuelas de posgrado) van en Price por supuesto. **Grupo** = Laureate para UPC, UPN y UCAL.
 
-**Ranking Sunedu** (Informe Bienal sobre la Realidad Universitaria 2017, Anexo F, producción científica al 2016): «general» es el puesto del informe (1 a 32; el resto empata en 33); «privadas» renumera solo las privadas (1 a 19; las empatadas comparten el 20). Vacío si no figura.
+**Ranking Sunedu** (IV Informe Bienal 2021-2022, publicado el 2025-09-23): Sunedu rankea por separado 39 públicas y 43 privadas, sin ranking conjunto. «general» es el puesto dentro de su grupo; «privadas», el puesto entre las 43 privadas. Vacío si no figura.
+
+**Docentes** (columnas Total docentes y Ratio alumnos/docente): docentes únicos 2025-1 de los datos abiertos de Sunedu; el ratio divide los matriculados 2025-1 de Base_Tuni (pregrado y posgrado) entre los docentes.
 
 Las hojas `Laureate`, `Clasificación Sunedu` y `Base_univ` alimentan las fórmulas de `Base_Tuni`; el simulador no las lee directamente.
 

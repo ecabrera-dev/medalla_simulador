@@ -166,8 +166,7 @@
         <select id="pool">
           <option value="todas">Todas las privadas</option>
           <option value="sinriesgo">Sin riesgo</option>
-          <option value="topmas">Solo Top+</option>
-          <option value="topmenos">Solo Top-</option>
+          <option value="top">Solo Top</option>
           <option value="middle">Solo Middle</option>
           <option value="value">Solo Value</option>
           <option value="price">Solo Price</option>
@@ -259,8 +258,8 @@
         <li>Financieros en S/ millones. «Último disponible» toma, por partida, el año más reciente con dato; el año se indica cuando no es el último de la hoja. Ingresos y utilidad operativa: datasae y, si falta, EEFF; resultado neto y EBITDA: EEFF de los portales de transparencia.</li>
         <li>EBITDA estimado (marcado «e», en cursiva): «EBITDA estimado = Sí» en Base_Financieros. Para las universidades que no publican D&A es utilidad operativa + 5.3% de los ingresos del mismo año (mediana de D&A / ingresos de las que sí la publican).</li>
         <li>El optimizador elige una universidad a la vez, la de mayor valor factible dado lo ya comprado, dentro de las candidatas elegidas. «Sin riesgo» solo acepta universidades que no generan celdas con riesgo.</li>
-        <li>Segmento: Top+, Top-, Middle, Value, Price y Resto de privadas (columna Segmento de Base_Universidades). Top+, Top- y Middle siguen el Segundo Avance; Value y Price se separan por pensión (Price = pensión mensual mínima menor a S/ 550); Resto = privadas sin pensión levantada. Regionales: sin alumnos en Lima Metropolitana. Pequeñas: hasta el umbral de alumnos de pregrado (5,000 por defecto, editable en «Umbrales»).</li>
-        <li>Rk. priv.: puesto en el ranking general de universidades de Sunedu (Informe Bienal 2017, Anexo F, producción científica al 2016) contando solo las privadas. Del 1 al 19 hay puesto propio; el resto empata en 20 (33 en el ranking general). «–»: no figura en el ranking. El ranking general está en el tooltip y en Base_Universidades.</li>
+        <li>Segmento: Top, Middle, Value y Price (columna Segmento de Base_Universidades), por pensión promedio: Price menor a S/ 750, Value de S/ 750 a 1,000, Middle sobre S/ 1,000 y Top (regla del deck del 2026-11-23). Las privadas sin pensión levantada van en Price. Regionales: sin alumnos en Lima Metropolitana. Pequeñas: hasta el umbral de alumnos de pregrado (5,000 por defecto, editable en «Umbrales»).</li>
+        <li>Rk. priv.: puesto entre las 43 privadas del ranking universitario de Sunedu (IV Informe Bienal 2021-2022, publicado el 2025-09-23). Sunedu rankea por separado públicas y privadas. «–»: no figura en el ranking.</li>
         <li>Paquetes de compra: cada fila corre el optimizador desde cero (solo Laureate como base) con las candidatas de ese grupo, el criterio, la restricción y el mercado elegidos arriba. «Usar» lo carga como escenario.</li>
       </ul>
     </details>
@@ -361,8 +360,7 @@ function candidatas() { return U.filter(u => u.priv && !LAUR.has(u.i)).map(u => 
 const POOLS = {
   todas: {n: 'Todas las privadas', f: () => true},
   sinriesgo: {n: 'Sin riesgo', f: () => true, estricta: true},
-  topmas: {n: 'Top+', f: u => U[u].seg === 'Top+'},
-  topmenos: {n: 'Top-', f: u => U[u].seg === 'Top-'},
+  top: {n: 'Top', f: u => U[u].seg === 'Top'},
   middle: {n: 'Middle', f: u => U[u].seg === 'Middle'},
   value: {n: 'Value', f: u => U[u].seg === 'Value'},
   price: {n: 'Price', f: u => U[u].seg === 'Price'},
@@ -421,7 +419,7 @@ function render() {
   renderKpis(T); renderTabla(evs); renderScatter(evs); renderHeat(T); renderPaquetes(T);
 }
 
-const PAQ = [{k: 'sinriesgo', n: 5}, {k: 'regionales', n: 5}, {k: 'price', n: 3}, {k: 'value', n: 3}, {k: 'pequenas', n: 10}, {k: 'middle', n: 3}, {k: 'topmenos', n: 2}, {k: 'topmas', n: 2}];
+const PAQ = [{k: 'sinriesgo', n: 5}, {k: 'regionales', n: 5}, {k: 'price', n: 3}, {k: 'value', n: 3}, {k: 'pequenas', n: 10}, {k: 'middle', n: 3}, {k: 'top', n: 2}];
 let paqClave = null, paqRes = [];
 function renderPaquetes(T) {
   const modo = $('restr').value;
@@ -485,7 +483,7 @@ function renderTabla(evs) {
   ];
   const filas = candidatas().map(u => ({u, ev: evs[u], x: U[u], v: valorCrit(evs[u], modo)}));
   const sk = st.sort || 'v';
-  const SEGO = {'Top+': 'a', 'Top-': 'b', Middle: 'c', Value: 'd', Price: 'e', 'Resto de privadas': 'f'};
+  const SEGO = {Top: 'a', Middle: 'c', Value: 'd', Price: 'e', 'Resto de privadas': 'f'};
   // ranking: el 1 arriba (se ordena descendente, por eso el signo); sin ranking al final
   const get = f => ({v: f.v, n: f.x.s, seg: SEGO[f.x.seg] || 'g', rkp: f.x.rkp == null ? null : -f.x.rkp, al: f.x.al, ing: f.x.ing, eb: f.x.eb, p: f.ev.p, nr: f.ev.riesgos.length, chk: st.sel.has(f.u) ? 1 : 0})[sk];
   filas.sort((a, b) => { const x = get(a), y = get(b); if (x == null) return 1; if (y == null) return -1; return typeof x === 'string' ? x.localeCompare(y) : y - x; });
@@ -500,7 +498,7 @@ function renderTabla(evs) {
       <td class="l"><span class="tick"></span></td>
       <td class="l name">${x.s}${/deneg/i.test(x.lic || '') ? ' <span class="yr">lic. denegada</span>' : ''}</td>
       <td class="l segt">${x.seg === 'Resto de privadas' ? 'Resto' : x.seg}${x.lima ? '' : '<span class="tag">regional</span>'}</td>
-      ${x.rkp == null ? '<td class="nd" title="No figura en el ranking Sunedu (Informe Bienal 2017)">–</td>' : `<td title="Ranking Sunedu general: ${x.rkg}${x.rkg === 33 ? ' (empate)' : ''}">${x.rkp}</td>`}
+      ${x.rkp == null ? '<td class="nd" title="No figura en el ranking Sunedu de privadas (IV Informe Bienal 2021-2022)">–</td>' : `<td title="Puesto entre 43 privadas (IV Informe Bienal 2021-2022)">${x.rkp}</td>`}
       ${num(x.al)}${num(x.ing, x.ingA)}${num(x.eb, x.ebA, x.ebE)}
       <td><span class="meter"><i><b style="width:${Math.round(100 * ev.p)}%"></b></i>${pct(ev.p)}</span></td>
       ${num(factibleCrit(ev))}<td>${chip}</td></tr>`;

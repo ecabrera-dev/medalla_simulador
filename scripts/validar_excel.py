@@ -41,7 +41,7 @@ COLS_FIN = {"cod": "Código INEI", "nom": "Nombre Entidad", "a": "Año", "ens": 
             "eb": "EBITDA", "est": "EBITDA estimado"}
 COLS_UNI = {"cod": "Código INEI", "nom": "Nombre Entidad", "s": "Sigla", "ges": "Tipo_gestión",
             "tipo": "Tipo_entidad", "lic": "Licencia", "g": "Grupo", "seg": "Segmento"}
-SEGMENTOS = {"Top+", "Top-", "Middle", "Value", "Price", "Resto de privadas", "Pública"}
+SEGMENTOS = {"Top", "Middle", "Value", "Price", "Resto de privadas", "Pública"}
 COLS_RANK = {"rg": "Ranking Sunedu general", "rp": "Ranking Sunedu privadas"}   # opcionales: si están, enteros >= 1
 TIPOS = {"Universidad", "Escuela Superior", "Instituto", "Otra"}
 SIN_FAM = {None, "", "No se encuentra"}
